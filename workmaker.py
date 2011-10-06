@@ -170,18 +170,10 @@ signal(SIGUSR1, newBlockNotification)
 
 
 from jsonrpcServer import JSONRPCServer
-
-def _RunCLI():
-    import code, threading
-    namespace = globals()
-
-    def CLI():
-        code.interact(banner=None, local=namespace)
-    threading.Timer(0, CLI).start()
+import interactiveMode
 
 if __name__ == "__main__":
 	server = JSONRPCServer(('', 8444))
 	server.getBlockHeader = getBlockHeader
 	server.RaiseRedFlags = RaiseRedFlags
-	_RunCLI()
 	server.serve_forever()
