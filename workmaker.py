@@ -21,10 +21,13 @@ MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.start()
 
 
+from struct import pack
+from time import time
+
 def getBlockHeader():
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk) = MRD
-	timestamp = b'0000'  # FIXME
+	timestamp = pack('<L', int(time()))
 	hdr = b'\0\0\0\1' + prevBlock + merkleRoot + timestamp + bits + b'\0\0\0\0'
 	return (hdr, MRD)
 
