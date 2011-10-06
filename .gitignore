@@ -1,0 +1,6 @@
+*.pyc
+*.pyo
+*~
+*.bak
+config.py
+jsonrpc
