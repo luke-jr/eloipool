@@ -21,7 +21,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		wfile = self.wfile
-		buf = "HTTP/1.1 %d Eligius\n" % (status,)
+		buf = "HTTP/1.1 %d %s\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		if body is None:
