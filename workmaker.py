@@ -138,9 +138,9 @@ def merkleMaker_I():
 		sys.stdout.write("CLR ")
 		clearMerkleRoots.put(makeMerkleRoot(clearMerkleTree))
 	# Next, fill up the main queue (until they're all current)
-	elif len(merkleRoots) < WorkQueueSizeRegular[1]: # or merkleRoots[0][1] != currentMerkleTree:
+	elif len(merkleRoots) < WorkQueueSizeRegular[1] or merkleRoots[0][1] != currentMerkleTree:
 		sys.stdout.write("REG ")
-		merkleRoots.append(makeMerkleRoot(clearMerkleTree))
+		merkleRoots.append(makeMerkleRoot(currentMerkleTree))
 	else:
 		sys.stdout.write(".")
 		# TODO: rather than sleepspin, block until MinimumTxnUpdateWait expires or threading.Condition(?)
