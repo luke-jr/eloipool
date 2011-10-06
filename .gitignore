@@ -4,3 +4,4 @@
 *.bak
 config.py
 jsonrpc
+*.patch
