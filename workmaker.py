@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-from config import *
+import config
 from time import time
 now = time()
 
@@ -11,16 +11,12 @@ def RaiseRedFlags(reason):
 
 def makeCoinbaseTxn():
 	return b'' # TODO
+	# TODO: red flag on dupe coinbase
 
 
 from merklemaker import merkleMaker
 MM = merkleMaker()
-MM.UpstreamURI = UpstreamURI
-MM.WorkQueueSizeRegular = WorkQueueSizeRegular
-MM.WorkQueueSizeLongpoll = WorkQueueSizeLongpoll
-MM.TxnUpdateRetryWait = TxnUpdateRetryWait
-MM.MinimumTxnUpdateWait = MinimumTxnUpdateWait
-MM.IdleSleepTime = IdleSleepTime
+MM.__dict__.update(config.__dict__)
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.start()
 
