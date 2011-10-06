@@ -113,6 +113,7 @@ def updateMerkleTree():
 		currentMerkleTree = MerkleTree([None])
 		bits = a2b_hex(MP['bits'])
 		currentBlock = (prevBlock, bits)
+	# TODO: cache Txn or at least txid from previous merkle roots?
 	txnlist = map(Txn, map(a2b_hex, MP['transactions']))
 	txnlist = [None] + list(txnlist)
 	newMerkleTree = MerkleTree(txnlist)
