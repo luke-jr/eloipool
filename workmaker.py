@@ -175,6 +175,7 @@ from email.utils import formatdate
 import json
 import socketserver
 from time import mktime
+import traceback
 
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
@@ -296,7 +297,8 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 				return self.doLongpoll()
 			return self.doJSON(data)
 		except:
-			return self.sendReply(500)
+			print(traceback.format_exc())
+			return self.doError('uncaught error')
 setattr(MyTCPHandler, 'doHeader_content-length', MyTCPHandler.doHeader_content_length);
 
 class MyTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
