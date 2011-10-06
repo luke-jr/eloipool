@@ -7,6 +7,7 @@ import select
 import socketserver
 from time import mktime
 import traceback
+from util import swap32
 
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
@@ -75,6 +76,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		return self.sendReply(200, rv)
 	
 	getwork_rv_template = {
+		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
 		'target': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000',
 		'hash1': '00000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000010000',
 	}
@@ -84,13 +86,13 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		rv = dict(self.getwork_rv_template)
 		(hdr, MRD) = self.server.getBlockHeader()
 		
-		# FIXME: this assumption breaks with noncerange or pool-side rollntime
+		# FIXME: this assumption breaks with noncerange or rollntime
 		global _CheckForDupesHACK
 		if hdr in _CheckForDupesHACK:
 			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
 		_CheckForDupesHACK[hdr] = None
 		
-		data = b2a_hex(hdr).decode('utf8')
+		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
 		rv['data'] = data
 		# TODO: rv['midstate'] = 

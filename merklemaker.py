@@ -34,12 +34,12 @@ class merkleMaker(threading.Thread):
 		global now
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
-		prevBlock = a2b_hex(MP['previousblockhash'])
+		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
 		if prevBlock != self.currentBlock[0]:
 			self.merkleRoots.clear()
 			# TODO: Discard all work logs
 			self.currentMerkleTree = MerkleTree([None])
-			bits = a2b_hex(MP['bits'])
+			bits = a2b_hex(MP['bits'])[::-1]
 			self.currentBlock = (prevBlock, bits)
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = map(Txn, map(a2b_hex, MP['transactions']))
@@ -52,6 +52,7 @@ class merkleMaker(threading.Thread):
 	def makeMerkleRoot(self, merkleTree):
 		coinbaseTxn = self.makeCoinbaseTxn()
 		merkleRoot = merkleTree.withFirst(coinbaseTxn)
+		merkleRoot = merkleRoot[::-1]
 		return (merkleRoot, merkleTree, coinbaseTxn)
 	
 	def merkleMaker_I(self):

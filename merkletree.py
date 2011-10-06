@@ -1,5 +1,5 @@
 from bitcointxn import Txn
-from dblsha import dblsha
+from util import dblsha
 
 class MerkleTree:
 	def __init__(self, data):

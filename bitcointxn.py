@@ -1,5 +1,5 @@
 from bitcoinvarlen import varlenDecode, varlenEncode
-from dblsha import dblsha
+from util import dblsha
 from struct import pack, unpack
 
 _nullprev = b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0'

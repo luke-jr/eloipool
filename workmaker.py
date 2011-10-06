@@ -28,13 +28,13 @@ def getBlockHeader():
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
-	hdr = b'\0\0\0\1' + prevBlock + merkleRoot + timestamp + bits + b'\0\0\0\0'
+	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return (hdr, MRD)
 
 
 def newBlockNotification(signum, frame):
 	MM.updateMerkleTree()
-	# TODO: RESPOND TO LONGPOLLS
+	# TODO: Force RESPOND TO LONGPOLLS?
 	pass
 
 from signal import signal, SIGUSR1
