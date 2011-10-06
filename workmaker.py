@@ -313,7 +313,12 @@ def _RunCLI():
         code.interact(banner=None, local=namespace)
     threading.Timer(0, CLI).start()
 
+import select
 if __name__ == "__main__":
 	server = MyTCPServer(('', 8444), MyTCPHandler)
 	_RunCLI()
-	server.serve_forever()
+	while True:
+		try:
+			server.serve_forever()
+		except select.error:
+			pass
