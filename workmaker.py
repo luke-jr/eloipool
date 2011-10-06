@@ -96,11 +96,13 @@ import jsonrpc
 from threading import Thread
 from time import sleep, time
 import traceback
+import sys # for debugging
 
 access = jsonrpc.ServiceProxy(UpstreamURI)
 
 nextMerkleUpdate = 0
 def updateMerkleTree():
+	sys.stdout.write("\nUPDATE ")
 	global now, currentBlock, currentMerkleTree, merkleRoots, nextMerkleUpdate
 	nextMerkleUpdate = now + TxnUpdateRetryWait
 	MP = access.getmemorypool()
@@ -124,14 +126,12 @@ def makeMerkleRoot(merkleTree):
 	merkleRoot = merkleTree.withFirst(coinbaseTxn)
 	return (merkleRoot, merkleTree, coinbaseTxn)
 
-import sys
 def merkleMaker_I():
 	global now, currentBlock, currentMerkleTree, merkleRoots, clearMerkleRoots
 	
 	# First, update merkle tree if we haven't for a while and aren't crunched for time
 	now = time()
 	if nextMerkleUpdate <= now and clearMerkleRoots.qsize() > WorkQueueSizeLongpoll[0] and len(merkleRoots) > WorkQueueSizeRegular[0]:
-		sys.stdout.write("\nUPDATE ")
 		updateMerkleTree()
 	# Next, fill up the longpoll queue first, since it can be used as a failover for the main queue
 	elif not clearMerkleRoots.full():
