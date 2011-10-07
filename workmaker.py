@@ -128,8 +128,8 @@ from signal import signal, SIGUSR1
 signal(SIGUSR1, newBlockNotification)
 
 
-from jsonrpcServer import JSONRPCServer
-import interactiveMode
+from jsonrpcserver import JSONRPCServer
+import interactivemode
 
 if __name__ == "__main__":
 	server = JSONRPCServer(('', 8444))
