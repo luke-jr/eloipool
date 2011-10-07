@@ -12,10 +12,14 @@ UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetw
 
 
 from bitcointxn import Txn
+from base58 import b58decode
+
 def makeCoinbaseTxn(coinbaseValue):
 	t = Txn.new()
 	t.setCoinbase(b'HI')
-	t.addOutput(coinbaseValue, b'\x76\xa9\x14' + b'\xa7\x0e\x0a\x44\x09\x56\xf1\x35\x85\x6e\x77\x9e\xd9\x24\x55\xa8\x13\xb3\x10\xf1' + b'\x88\xac')
+	addr = config.TrackerAddr
+	pubkeyhash = b58decode(addr, 25)[1:-4]
+	t.addOutput(coinbaseValue, b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac')
 	t.assemble()
 	# TODO
 	# TODO: red flag on dupe coinbase
