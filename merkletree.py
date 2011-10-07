@@ -1,4 +1,4 @@
-from bitcointxn import Txn
+from bitcoin.txn import Txn
 from util import dblsha
 
 class MerkleTree:

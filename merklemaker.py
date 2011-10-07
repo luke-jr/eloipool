@@ -1,5 +1,5 @@
 from binascii import a2b_hex
-from bitcointxn import Txn
+from bitcoin.txn import Txn
 from collections import deque
 from queue import Queue
 import jsonrpc

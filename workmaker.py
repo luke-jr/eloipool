@@ -7,11 +7,11 @@ def RaiseRedFlags(reason):
 	return reason
 
 
-from bitcoinnode import BitcoinLink
+from bitcoin.node import BitcoinLink
 UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetworkId )
 
 
-from bitcointxn import Txn
+from bitcoin.txn import Txn
 from base58 import b58decode
 
 def makeCoinbase():

@@ -1,4 +1,4 @@
-from bitcoinvarlen import varlenDecode, varlenEncode
+from .varlen import varlenDecode, varlenEncode
 from util import dblsha
 from struct import pack, unpack
 

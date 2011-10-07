@@ -1,4 +1,4 @@
-from bitcoinvarlen import varlenEncode
+from .varlen import varlenEncode
 import socket
 from struct import pack, unpack
 from time import time
