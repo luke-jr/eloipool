@@ -40,6 +40,7 @@ class merkleMaker(threading.Thread):
 			# TODO: Discard all work logs
 			self.currentMerkleTree = MerkleTree([None])
 			bits = a2b_hex(MP['bits'])[::-1]
+			self.lastBlock = self.currentBlock
 			self.currentBlock = (prevBlock, bits)
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = map(Txn, map(a2b_hex, MP['transactions']))

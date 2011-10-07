@@ -8,3 +8,6 @@ def swap32(b):
 	for i in range(0, len(b), 4):
 		o += b[i + 3:i - 1 if i else None:-1]
 	return o
+
+class RejectedShare(ValueError):
+	pass

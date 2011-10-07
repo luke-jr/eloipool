@@ -1,5 +1,5 @@
 from base64 import b64decode
-from binascii import b2a_hex
+from binascii import a2b_hex, b2a_hex
 from datetime import datetime
 from email.utils import formatdate
 import json
@@ -7,7 +7,7 @@ import select
 import socketserver
 from time import mktime
 import traceback
-from util import swap32
+from util import RejectedShare, swap32
 
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
@@ -69,11 +69,12 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		if not hasattr(self, method):
 			return self.doError('No such method')
 		# TODO: handle errors as JSON-RPC
+		self._JSONHeaders = {}
 		rv = getattr(self, method)(*tuple(data['params']))
 		rv = {'id': data['id'], 'error': None, 'result': rv}
 		rv = json.dumps(rv)
 		rv = rv.encode('utf8')
-		return self.sendReply(200, rv)
+		return self.sendReply(200, rv, headers=self._JSONHeaders)
 	
 	getwork_rv_template = {
 		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
@@ -99,10 +100,19 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		return rv
 	
 	def doJSON_submitwork(self, data):
-		return 'TODO'  # TODO
-		pass
+		data = swap32(a2b_hex(data))[:76]
+		share = {
+			'data': data,
+			'username': self.Username,
+		}
+		try:
+			self.server.receiveShare(share)
+		except RejectedShare as rej:
+			self._JSONHeaders['X-Reject-Reason'] = str(rej)
+			return False
+		return True
 	
-	def handle(self):
+	def handle_i(self):
 		# TODO: handle socket errors
 		rfile = self.rfile
 		data = rfile.readline().strip()
@@ -132,6 +142,11 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		except:
 			print(traceback.format_exc())
 			return self.doError('uncaught error')
+	
+	def handle(self):
+		while True:
+			self.handle_i()
+	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 
 class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
