@@ -70,7 +70,7 @@ class Txn:
 		
 		outputs = self.outputs
 		data += varlenEncode(len(outputs))
-		for amount, pkScript in inputs:
+		for amount, pkScript in outputs:
 			data += pack('<Q', amount)
 			data += varlenEncode(len(pkScript)) + pkScript
 		
