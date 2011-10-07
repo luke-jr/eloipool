@@ -10,6 +10,7 @@ import traceback
 import sys # for debugging
 
 clearMerkleTree = MerkleTree([None])
+clearMerkleTree.coinbaseValue = 5000000000  # FIXME
 
 class merkleMaker(threading.Thread):
 	def __init__(self, *a, **k):
@@ -37,7 +38,9 @@ class merkleMaker(threading.Thread):
 		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
 		if prevBlock != self.currentBlock[0]:
 			self.merkleRoots.clear()
-			self.currentMerkleTree = MerkleTree([None])
+			tmpMT = MerkleTree([None])
+			tmpMT.coinbaseValue = 5000000000  # FIXME
+			self.currentMerkleTree = tmpMT
 			bits = a2b_hex(MP['bits'])[::-1]
 			self.lastBlock = self.currentBlock
 			self.currentBlock = (prevBlock, bits)
@@ -47,11 +50,12 @@ class merkleMaker(threading.Thread):
 		txnlist = [None] + list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
 		if newMerkleTree.withFirst(b'') != self.currentMerkleTree.withFirst(b''):
+			newMerkleTree.coinbaseValue = MP['coinbasevalue']
 			self.currentMerkleTree = newMerkleTree
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 	
 	def makeMerkleRoot(self, merkleTree):
-		coinbaseTxn = self.makeCoinbaseTxn()
+		coinbaseTxn = self.makeCoinbaseTxn(merkleTree.coinbaseValue)
 		merkleRoot = merkleTree.withFirst(coinbaseTxn)
 		return (merkleRoot, merkleTree, coinbaseTxn)
 	
