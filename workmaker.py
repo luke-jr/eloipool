@@ -13,10 +13,13 @@ UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetw
 
 from bitcoin.txn import Txn
 from base58 import b58decode
+from struct import pack
+from time import time
 
 def makeCoinbase():
 	now = int(time())
 	if now > makeCoinbase.last:
+		makeCoinbase.last = now
 		makeCoinbase.extranonce = 0
 	else:
 		makeCoinbase.extranonce += 1
