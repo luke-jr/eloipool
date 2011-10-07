@@ -53,7 +53,6 @@ class merkleMaker(threading.Thread):
 	def makeMerkleRoot(self, merkleTree):
 		coinbaseTxn = self.makeCoinbaseTxn()
 		merkleRoot = merkleTree.withFirst(coinbaseTxn)
-		merkleRoot = merkleRoot[::-1]
 		return (merkleRoot, merkleTree, coinbaseTxn)
 	
 	def merkleMaker_I(self):
