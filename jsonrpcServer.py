@@ -85,7 +85,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		if not data is None:
 			return self.doJSON_submitwork(data)
 		rv = dict(self.getwork_rv_template)
-		(hdr, MRD) = self.server.getBlockHeader()
+		hdr = self.server.getBlockHeader(self.Username)
 		
 		# FIXME: this assumption breaks with noncerange or rollntime
 		global _CheckForDupesHACK

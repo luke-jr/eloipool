@@ -37,11 +37,11 @@ class merkleMaker(threading.Thread):
 		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
 		if prevBlock != self.currentBlock[0]:
 			self.merkleRoots.clear()
-			# TODO: Discard all work logs
 			self.currentMerkleTree = MerkleTree([None])
 			bits = a2b_hex(MP['bits'])[::-1]
 			self.lastBlock = self.currentBlock
 			self.currentBlock = (prevBlock, bits)
+			self.onBlockChange()
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = map(Txn, map(a2b_hex, MP['transactions']))
 		txnlist = [None] + list(txnlist)

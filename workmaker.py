@@ -12,10 +12,17 @@ def makeCoinbaseTxn():
 	# TODO: red flag on dupe coinbase
 
 
+workLog = {}
+
+def clearWorkLog():
+	workLog.clear()
+
+
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
 MM.makeCoinbaseTxn = makeCoinbaseTxn
+MM.onBlockChange = clearWorkLog
 MM.start()
 
 
@@ -23,12 +30,13 @@ from struct import pack, unpack
 from time import time
 from util import RejectedShare
 
-def getBlockHeader():
+def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
-	return (hdr, MRD)
+	workLog.setdefault(username, {})[merkleRoot] = MRD
+	return hdr
 
 def checkShare(share):
 	data = share['data']
@@ -38,8 +46,18 @@ def checkShare(share):
 		if sharePrevBlock == MM.lastBlock[0]:
 			raise RejectedShare('stale-prevblk')
 		raise RejectedShare('bad-prevblk')
+	
 	shareMerkleRoot = data[36:68]
-	# TODO: find it in the log
+	# TODO: use userid
+	username = share['username']
+	if username not in workLog:
+		raise RejectedShare('unknown-user')
+	MWL = workLog['username']
+	if shareMerkleRoot not in MWL:
+		raise RejectedShare('unknown-work')
+	MRD = MWL[shareMerkleRoot]
+	share['MRD'] = MRD
+	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	shareTime = share['time'] = time()
 	if shareTimestamp < shareTime - 300:
