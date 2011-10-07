@@ -29,15 +29,15 @@ class Txn:
 		self.outputs.append( (amount, pkScript) )
 	
 	def disassemble(self):
-		self.version = unpack('<L', self.data[:4])
+		self.version = unpack('<L', self.data[:4])[0]
 		
 		(inputCount, data) = varlenDecode(self.data[4:])
 		inputs = []
 		for i in range(inputCount):
-			prevout = (data[:32], unpack('<L', data[32:36]))
+			prevout = (data[:32], unpack('<L', data[32:36])[0])
 			(sigScript, data) = varlenDecode(data[36:])
 			sigScript = data[:sigScript]
-			seqno = unpack('<L', data[sigScript:sigScript + 4])
+			seqno = unpack('<L', data[sigScript:sigScript + 4])[0]
 			data = data[sigScript + 4:]
 			inputs.append( (prevout, sigScript, seqno) )
 		self.inputs = inputs
@@ -45,7 +45,7 @@ class Txn:
 		(outputCount, data) = varlenDecode(self.data[4:])
 		outputs = []
 		for i in range(outputCount):
-			amount = unpack('<Q', data[:8])
+			amount = unpack('<Q', data[:8])[0]
 			(pkScript, data) = varlenDecode(data[8:])
 			pkScript = data[:pkScript]
 			data = data[pkScript:]
@@ -53,7 +53,7 @@ class Txn:
 		self.outputs = outputs
 		
 		assert len(data) == 4
-		self.locktime = unpack('<L', data)
+		self.locktime = unpack('<L', data)[0]
 	
 	def isCoinbase(self):
 		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.input[0][0] == _nullprev
