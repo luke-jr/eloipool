@@ -100,7 +100,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		return rv
 	
 	def doJSON_submitwork(self, data):
-		data = swap32(a2b_hex(data))[:76]
+		data = swap32(a2b_hex(data))[:80]
 		share = {
 			'data': data,
 			'username': self.Username,
