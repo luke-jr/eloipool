@@ -14,9 +14,18 @@ UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetw
 from bitcointxn import Txn
 from base58 import b58decode
 
+def makeCoinbase():
+	now = int(time())
+	if now > makeCoinbase.last:
+		makeCoinbase.extranonce = 0
+	else:
+		makeCoinbase.extranonce += 1
+	return pack('>L', now) + pack('>Q', makeCoinbase.extranonce).lstrip(b'\0')
+makeCoinbase.last = 0
+
 def makeCoinbaseTxn(coinbaseValue):
 	t = Txn.new()
-	t.setCoinbase(b'HI')
+	t.setCoinbase(makeCoinbase())
 	addr = config.TrackerAddr
 	pubkeyhash = b58decode(addr, 25)[1:-4]
 	t.addOutput(coinbaseValue, b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac')
