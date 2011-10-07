@@ -38,6 +38,7 @@ MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
+MM._THISISUGLY = UpstreamBitcoind
 MM.start()
 
 

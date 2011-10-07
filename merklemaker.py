@@ -84,6 +84,7 @@ class merkleMaker(threading.Thread):
 		while True:
 			try:
 				self.merkleMaker_I()
+				self._THISISUGLY._flushrecv()
 			except:
 				print(traceback.format_exc())
 	
