@@ -33,6 +33,7 @@ class merkleMaker(threading.Thread):
 	
 	def updateMerkleTree(self):
 		global now
+		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
 		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
