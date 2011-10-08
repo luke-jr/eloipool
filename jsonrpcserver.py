@@ -151,6 +151,7 @@ setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_conte
 
 class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	allow_reuse_address = True
+	daemon_threads = True
 	
 	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, *a, **k):
 		super().__init__(server_address, RequestHandlerClass, *a, **k)
