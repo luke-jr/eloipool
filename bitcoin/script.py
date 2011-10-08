@@ -23,3 +23,13 @@ class BitcoinScript:
 			raise ValueError('invalid address')
 		(ver, pubkeyhash) = d
 		return b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac'
+
+def countSigOps(s):
+	# FIXME: don't count data as ops
+	c = 0
+	for ch in s:
+		if 0xac == ch & 0xfe:
+			c += 1
+		elif 0xae == ch & 0xfe:
+			c += 20
+	return c

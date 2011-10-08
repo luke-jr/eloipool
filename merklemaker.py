@@ -1,4 +1,5 @@
 from binascii import a2b_hex
+from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
 from queue import Queue
@@ -49,9 +50,17 @@ class merkleMaker(threading.Thread):
 			self.onBlockChange()
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = map(a2b_hex, MP['transactions'])
+		
 		txnlistsz = sum(map(len, txnlist))
 		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
+			self.logger.debug('Trimming transaction for size limit')
 			txnlistsz -= len(txnlist.pop())
+		
+		txnlistsz = sum(map(countSigOps, txnlist))
+		while txnlistsz > 19488:  # TODO: 20k limit - 0x200 breathing room
+			self.logger.debug('Trimming transaction for SigOp limit')
+			txnlistsz -= countSigOps(txnlist.pop())
+		
 		txnlist = map(Txn, txnlist)
 		txnlist = [None] + list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
