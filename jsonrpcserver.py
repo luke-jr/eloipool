@@ -5,6 +5,7 @@ from email.utils import formatdate
 import json
 import logging
 import select
+import socket
 import socketserver
 from time import mktime
 import traceback
@@ -147,8 +148,11 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			return self.doError('uncaught error')
 	
 	def handle(self):
-		while True:
-			self.handle_i()
+		try:
+			while True:
+				self.handle_i()
+		except socket.error:
+			pass
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 
