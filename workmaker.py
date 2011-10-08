@@ -15,6 +15,7 @@ from bitcoin.node import BitcoinLink
 UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetworkId )
 
 
+from bitcoin.script import BitcoinScript
 from bitcoin.txn import Txn
 from base58 import b58decode
 from struct import pack
@@ -33,9 +34,8 @@ makeCoinbase.last = 0
 def makeCoinbaseTxn(coinbaseValue):
 	t = Txn.new()
 	t.setCoinbase(makeCoinbase())
-	addr = config.TrackerAddr
-	pubkeyhash = b58decode(addr, 25)[1:-4]
-	t.addOutput(coinbaseValue, b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac')
+	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
+	t.addOutput(coinbaseValue, pkScript)
 	t.assemble()
 	# TODO
 	# TODO: red flag on dupe coinbase
