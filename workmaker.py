@@ -22,6 +22,8 @@ from struct import pack
 import subprocess
 from time import time
 
+CoinbasePrefix = config.CoinbasePrefix if hasattr(config, 'CoinbasePrefix') else b''
+
 def makeCoinbase():
 	now = int(time())
 	if now > makeCoinbase.last:
@@ -29,7 +31,7 @@ def makeCoinbase():
 		makeCoinbase.extranonce = 0
 	else:
 		makeCoinbase.extranonce += 1
-	return pack('>L', now) + pack('>Q', makeCoinbase.extranonce).lstrip(b'\0')
+	return CoinbasePrefix + pack('>L', now) + pack('>Q', makeCoinbase.extranonce).lstrip(b'\0')
 makeCoinbase.last = 0
 
 def makeCoinbaseTxn(coinbaseValue):
