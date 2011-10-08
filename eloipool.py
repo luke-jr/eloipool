@@ -59,10 +59,13 @@ from util import Bits2Target
 workLog = {}
 networkTarget = None
 
+server = None
 def blockChanged():
-	global MM, networkTarget
+	global MM, networkTarget, server
 	networkTarget = Bits2Target(MM.currentBlock[1])
 	workLog.clear()
+	if server:
+		server.wakeLongpoll()
 
 
 from merklemaker import merkleMaker

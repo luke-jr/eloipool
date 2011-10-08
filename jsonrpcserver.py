@@ -4,9 +4,11 @@ from datetime import datetime
 from email.utils import formatdate
 import json
 import logging
+import os
 import select
 import socket
 import socketserver
+import threading
 from time import mktime
 import traceback
 from util import RejectedShare, swap32
@@ -36,7 +38,8 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			headers['Content-Length'] = len(body)
 		if status == 200:
 			headers.setdefault('Content-Type', 'application/json')
-			#headers.setdefault('X-Long-Polling', '/LP')
+			headers.setdefault('X-Long-Polling', '/LP')
+			headers.setdefault('X-Roll-NTime', 'expire=120')
 		for k, v in headers.items():
 			if v is None: continue
 			buf += "%s: %s\n" % (k, v)
@@ -63,7 +66,34 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
 	
 	def doLongpoll(self):
-		pass # TODO
+		self.sendReply(200, body=None)
+		wfile = self.wfile
+		wfile.write(b"1\r\n{\r\n")
+		
+		with self.server._LPLock:
+			self.server._LPCount += 1
+		
+		LPWait = self.server._LPWait
+		EP = select.epoll(2)
+		EP.register(LPWait, select.EPOLLIN)
+		while True:
+			ev = EP.poll(45)  # TODO: make keepalive configurable
+			if len(ev):
+				break
+			# Keepalive via chunked transfer encoding
+			wfile.write(b"1\r\n \r\n")
+			wfile.flush()
+		
+		with self.server._LPCountL:
+			self.server._LPCount -= 1
+		self.server._LPSem.release()
+		
+		rv = self.doJSON_getwork()
+		rv = {'id': 1, 'error': None, 'result': rv}
+		rv = json.dumps(rv)
+		rv = rv.encode('utf8')
+		rv = rv[1:]  # strip the '{' we already sent
+		wfile.write(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
 	
 	def doJSON(self, data):
 		# TODO: handle JSON errors
@@ -99,7 +129,6 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
 		_CheckForDupesHACK[uhdr] = None
 		
-		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
 		rv['data'] = data
@@ -166,6 +195,11 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	daemon_threads = True
 	
 	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, *a, **k):
+		self._LPCount = 0
+		self._LPCountL = threading.Lock()
+		self._LPLock = threading.Lock()
+		self._LPSem = threading.Semaphore(0)
+		self._setupLongpoll()
 		super().__init__(server_address, RequestHandlerClass, *a, **k)
 	
 	def serve_forever(self, *a, **k):
@@ -174,3 +208,20 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 				super().serve_forever(*a, **k)
 			except select.error:
 				pass
+	
+	def _setupLongpoll(self):
+		(r, w) = os.pipe()
+		self._LPWait = r
+		self._LPWaitW = w
+	
+	def wakeLongpoll(self):
+		# TODO: logging
+		with self._LPLock:
+			os.close(self._LPWaitW)
+			while True:
+				with self._LPCountL:
+					if not self._LPCount:
+						break
+				self._LPSem.acquire()
+			os.close(self._LPWait)
+			self._setupLongpoll()
