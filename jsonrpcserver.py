@@ -3,6 +3,7 @@ from binascii import a2b_hex, b2a_hex
 from datetime import datetime
 from email.utils import formatdate
 import json
+import logging
 import select
 import socketserver
 from time import mktime
@@ -19,6 +20,8 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		405: 'Method Not Allowed',
 		500: 'Internal Server Error',
 	}
+	
+	logger = logging.getLogger('JSONRPCHandler')
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		wfile = self.wfile
@@ -140,7 +143,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 				return self.doLongpoll()
 			return self.doJSON(data)
 		except:
-			print(traceback.format_exc())
+			self.logger.error(traceback.format_exc())
 			return self.doError('uncaught error')
 	
 	def handle(self):

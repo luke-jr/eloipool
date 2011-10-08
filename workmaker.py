@@ -2,8 +2,12 @@
 import config
 
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 def RaiseRedFlags(reason):
-	# FIXME: Critical-log
+	logging.getLogger('redflag').critical(reason)
 	return reason
 
 
@@ -107,17 +111,18 @@ def checkShare(share):
 		raise RejectedShare('H-not-zero')
 	blkhashn = hash2int(blkhash)
 	
-	print('BLKHASH: %64x' % (blkhashn,))
 	global networkTarget
-	print(' TARGET: %64x' % (networkTarget,))
+	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
+	logfunc('BLKHASH: %64x' % (blkhashn,))
+	logfunc(' TARGET: %64x' % (networkTarget,))
 	
 	if blkhashn <= networkTarget:
-		print("Submitting upstream")
+		logfunc("Submitting upstream")
 		MRD[1].data[0] = MRD[2]
 		UpstreamBitcoind.submitBlock(data, MRD[1].data)
+checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
-	print(share)
 	# TODO: username => userid
 	checkShare(share)
 	# TODO
