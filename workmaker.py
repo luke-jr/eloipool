@@ -103,7 +103,7 @@ def logShare(share):
 	if db is None:
 		return
 	dbc = db.cursor()
-	rem_host = 'TODO'
+	rem_host = share.get('remoteHost', '?')
 	username = share['username']
 	reason = share.get('rejectReason', None)
 	upstreamResult = share.get('upstreamResult', None)

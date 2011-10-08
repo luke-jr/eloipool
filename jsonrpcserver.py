@@ -108,6 +108,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		share = {
 			'data': data,
 			'username': self.Username,
+			'remoteHost': self.request.getpeername()[0],
 		}
 		try:
 			self.server.receiveShare(share)
