@@ -10,7 +10,7 @@ def _RunCLI():
 	
 	def CLI():
 		while True:
-			c.interact()
+			c.interact(banner='')
 			print("Not exiting implicitly. Use sys.exit() if you really want to.")
 			dt = ndt = 0
 			for thread in threading.enumerate():
