@@ -106,10 +106,11 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		# TODO: rv['midstate'] = 
 		return rv
 	
-	def doJSON_submitwork(self, data):
-		data = swap32(a2b_hex(data))[:80]
+	def doJSON_submitwork(self, datax):
+		data = swap32(a2b_hex(datax))[:80]
 		share = {
 			'data': data,
+			'_origdata' : datax,
 			'username': self.Username,
 			'remoteHost': self.request.getpeername()[0],
 		}
