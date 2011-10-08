@@ -19,6 +19,7 @@ from bitcoin.script import BitcoinScript
 from bitcoin.txn import Txn
 from base58 import b58decode
 from struct import pack
+import subprocess
 from time import time
 
 def makeCoinbase():
@@ -34,9 +35,32 @@ makeCoinbase.last = 0
 def makeCoinbaseTxn(coinbaseValue):
 	t = Txn.new()
 	t.setCoinbase(makeCoinbase())
+	
+	if hasattr(config, 'CoinbaserCmd'):
+		coinbased = 0
+		try:
+			cmd = config.CoinbaserCmd
+			cmd = cmd.replace('%d', str(coinbaseValue))
+			p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+			nout = int(p.stdout.readline())
+			for i in range(nout):
+				amount = int(p.stdout.readline())
+				addr = p.stdout.readline().rstrip(b'\n').decode('utf8')
+				pkScript = BitcoinScript.toAddress(addr)
+				t.addOutput(amount, pkScript)
+				coinbased += amount
+		except:
+			coinbased = coinbaseValue + 1
+		if coinbased >= coinbaseValue:
+			logging.getLogger('makeCoinbaseTxn').error('Coinbaser failed!')
+			t.outputs = []
+		else:
+			coinbaseValue -= coinbased
+	
 	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
 	t.addOutput(coinbaseValue, pkScript)
 	t.assemble()
+	
 	# TODO
 	# TODO: red flag on dupe coinbase
 	return t
