@@ -105,9 +105,10 @@ def logShare(share):
 	username = share['username']
 	reason = share.get('rejectReason', None)
 	solution = share['data']
-	solution = b2a_hex(solution)
-	stmt = 'insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, \'hex\'))'
+	solution = b2a_hex(solution).decode('utf8')
+	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
 	params = (rem_host, username, YN(not reason), None, reason, solution)
+	print((stmt,params))
 	dbc.execute(stmt, params)
 	db.commit()
 
