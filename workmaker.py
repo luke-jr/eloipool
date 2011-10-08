@@ -95,6 +95,8 @@ def getBlockHeader(username):
 	return hdr
 
 def YN(b):
+	if b is None:
+		return None
 	return 'Y' if b else 'N'
 
 def logShare(share):
@@ -104,10 +106,11 @@ def logShare(share):
 	rem_host = 'TODO'
 	username = share['username']
 	reason = share.get('rejectReason', None)
+	upstreamResult = share.get('upstreamResult', None)
 	solution = share['data']
 	solution = b2a_hex(solution).decode('utf8')
 	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
-	params = (rem_host, username, YN(not reason), None, reason, solution)
+	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
 	print((stmt,params))
 	dbc.execute(stmt, params)
 	db.commit()
@@ -153,8 +156,6 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
-	logShare(share)
-	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
 		txlist = MRD[1].data
@@ -162,6 +163,9 @@ def checkShare(share):
 		t.setCoinbase(MRD[2])
 		t.assemble()
 		UpstreamBitcoind.submitBlock(data, txlist)
+		share['upstreamResult'] = True
+	
+	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
