@@ -1,4 +1,4 @@
-from binascii import a2b_hex
+from binascii import a2b_hex, b2a_hex
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
@@ -34,20 +34,31 @@ class merkleMaker(threading.Thread):
 		now = time()
 		self.updateMerkleTree()
 	
+	def updateBlock(self, newBlock, bits = None, _HBH = None):
+		if newBlock == self.currentBlock[0]:
+			return
+		
+		if bits is None:
+			bits = self.currentBlock[1]
+		if _HBH is None:
+			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
+		self.logger.debug('New block: %s (bits: %s)' % _HBH)
+		self.merkleRoots.clear()
+		self.currentMerkleTree = self.clearMerkleTree
+		self.lastBlock = self.currentBlock
+		self.currentBlock = (newBlock, bits)
+		self.needMerkle = 2
+		self.onBlockChange()
+	
 	def updateMerkleTree(self):
 		global now
 		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
 		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
-		if prevBlock != self.currentBlock[0]:
-			self.logger.debug('New block: %s' % (MP['previousblockhash'],))
-			self.merkleRoots.clear()
-			self.currentMerkleTree = self.clearMerkleTree
-			bits = a2b_hex(MP['bits'])[::-1]
-			self.lastBlock = self.currentBlock
-			self.currentBlock = (prevBlock, bits)
-			self.onBlockChange()
+		bits = a2b_hex(MP['bits'])[::-1]
+		if (prevBlock, bits) != self.currentBlock:
+			self.updateBlock(prevBlock, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = [a for a in map(a2b_hex, MP['transactions'])]
 		
@@ -74,6 +85,9 @@ class merkleMaker(threading.Thread):
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
+		
+		if self.needMerkle == 2:
+			self.needMerkle = 1
 	
 	def makeCoinbase(self):
 		now = int(time())
@@ -120,6 +134,9 @@ class merkleMaker(threading.Thread):
 			self._doing('regular merkle roots')
 			self.merkleRoots.append(self.makeMerkleRoot(self.currentMerkleTree))
 		else:
+			if self.needMerkle == 1:
+				self.onBlockUpdate()
+				self.needMerkle = False
 			self._doing('idle')
 			# TODO: rather than sleepspin, block until MinimumTxnUpdateWait expires or threading.Condition(?)
 			sleep(self.IdleSleepTime)

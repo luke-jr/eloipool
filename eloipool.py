@@ -60,12 +60,15 @@ workLog = {}
 networkTarget = None
 
 server = None
+def updateBlocks():
+	if server:
+		server.wakeLongpoll()
+
 def blockChanged():
 	global MM, networkTarget, server
 	networkTarget = Bits2Target(MM.currentBlock[1])
 	workLog.clear()
-	if server:
-		server.wakeLongpoll()
+	updateBlocks()
 
 
 from merklemaker import merkleMaker
@@ -75,6 +78,7 @@ MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
 MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
+MM.onBlockUpdate = updateBlocks
 MM._THISISUGLY = UpstreamBitcoind
 MM.start()
 
@@ -166,6 +170,7 @@ def checkShare(share):
 		t.assemble()
 		UpstreamBitcoind.submitBlock(data, txlist)
 		share['upstreamResult'] = True
+		MM.updateBlock(blkhash)
 	
 	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')

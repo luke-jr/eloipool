@@ -9,7 +9,7 @@ import select
 import socket
 import socketserver
 import threading
-from time import mktime
+from time import mktime, time, sleep
 import traceback
 from util import RejectedShare, swap32
 
@@ -62,6 +62,9 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 	def doHeader_content_length(self, value):
 		self.CL = int(value)
 	
+	def doHeader_x_minimum_wait(self, value):
+		self.reqinfo['MinWait'] = int(value)
+	
 	def doAuthenticate(self):
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
 	
@@ -69,6 +72,8 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		self.sendReply(200, body=None)
 		wfile = self.wfile
 		wfile.write(b"1\r\n{\r\n")
+		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
+		waitTime += time()
 		
 		with self.server._LPLock:
 			self.server._LPCount += 1
@@ -87,6 +92,10 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		with self.server._LPCountL:
 			self.server._LPCount -= 1
 		self.server._LPSem.release()
+		
+		now = time()
+		if now < waitTime:
+			sleep(waitTime - now);
 		
 		rv = self.doJSON_getwork()
 		rv = {'id': 1, 'error': None, 'result': rv}
@@ -162,6 +171,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			return self.sendReply(404)
 		self.CL = None
 		self.Username = None
+		self.reqinfo = {}
 		while True:
 			data = rfile.readline().strip()
 			if not data:
@@ -189,17 +199,25 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			pass
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
+setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 
 class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	allow_reuse_address = True
 	daemon_threads = True
 	
 	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, *a, **k):
+		self.logger = logging.getLogger('JSONRPCServer')
+		
 		self._LPCount = 0
 		self._LPCountL = threading.Lock()
 		self._LPLock = threading.Lock()
 		self._LPSem = threading.Semaphore(0)
+		self._LPWaitTime = time() + 15
+		self._LPILock = threading.Lock()
+		self._LPI = False
+		self._LPWLock = threading.Lock()
 		self._setupLongpoll()
+		
 		super().__init__(server_address, RequestHandlerClass, *a, **k)
 	
 	def serve_forever(self, *a, **k):
@@ -215,8 +233,32 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 		self._LPWaitW = w
 	
 	def wakeLongpoll(self):
-		# TODO: logging
+		with self._LPILock:
+			if self._LPI:
+				self.logger.info('Ignoring longpoll attempt while another is waiting')
+				return
+			self._LPI = True
+		
+		with self._LPWLock:
+			now = time()
+			if self._LPWaitTime > now:
+				delay = self._LPWaitTime - now
+				self.logger.info('Waiting %.3g seconds to longpoll' % (delay,))
+				sleep(delay)
+			
+			self._LPI = False
+			
+			self._actualLP()
+	
+	def _actualLP(self):
 		with self._LPLock:
+			OC = self._LPCount
+			if not OC:
+				self.logger.info('Nobody to longpoll')
+				return
+			
+			now = time()
+			
 			os.close(self._LPWaitW)
 			while True:
 				with self._LPCountL:
@@ -225,3 +267,7 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 				self._LPSem.acquire()
 			os.close(self._LPWait)
 			self._setupLongpoll()
+			
+			self._LPWaitTime = time()
+			self.logger.info('Longpoll woke up %d clients in %.3g seconds' % (OC, self._LPWaitTime - now))
+			self._LPWaitTime += 5  # TODO: make configurable: minimum time between longpolls
