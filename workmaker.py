@@ -93,6 +93,11 @@ from struct import pack, unpack
 from time import time
 from util import RejectedShare, dblsha, hash2int
 
+db = None
+if hasattr(config, 'DbOptions'):
+	import psycopg2
+	db = psycopg2.connect(**config.DbOptions)
+
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk) = MRD
@@ -100,6 +105,23 @@ def getBlockHeader(username):
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = MRD
 	return hdr
+
+def YN(b):
+	return 'Y' if b else 'N'
+
+def logShare(share):
+	if db is None:
+		return
+	dbc = db.cursor()
+	rem_host = 'TODO'
+	username = share['username']
+	reason = share.get('rejectReason', None)
+	solution = share['data']
+	solution = b2a_hex(solution)
+	stmt = 'insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, \'hex\'))'
+	params = (rem_host, username, YN(not reason), None, reason, solution)
+	dbc.execute(stmt, params)
+	db.commit()
 
 def checkShare(share):
 	data = share['data']
@@ -141,6 +163,8 @@ def checkShare(share):
 	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
+	
+	logShare(share)
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
