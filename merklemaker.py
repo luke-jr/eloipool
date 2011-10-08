@@ -6,18 +6,19 @@ from queue import Queue
 import jsonrpc
 import logging
 from merkletree import MerkleTree
+from struct import pack
 import threading
 from time import sleep, time
 import traceback
 
-clearMerkleTree = MerkleTree([None])
-clearMerkleTree.coinbaseValue = 5000000000  # FIXME
+_makeCoinbase = [0, 0]
 
 class merkleMaker(threading.Thread):
 	def __init__(self, *a, **k):
 		super().__init__(*a, **k)
 		self.daemon = True
 		self.logger = logging.getLogger('merkleMaker')
+		self.CoinbasePrefix = b''
 	
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
@@ -25,6 +26,7 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (None, None)
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
+		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
 		
 		self.nextMerkleUpdate = 0
@@ -41,15 +43,18 @@ class merkleMaker(threading.Thread):
 		if prevBlock != self.currentBlock[0]:
 			self.logger.debug('New block: %s' % (MP['previousblockhash'],))
 			self.merkleRoots.clear()
-			tmpMT = MerkleTree([None])
-			tmpMT.coinbaseValue = 5000000000  # FIXME
-			self.currentMerkleTree = tmpMT
+			self.currentMerkleTree = self.clearMerkleTree
 			bits = a2b_hex(MP['bits'])[::-1]
 			self.lastBlock = self.currentBlock
 			self.currentBlock = (prevBlock, bits)
 			self.onBlockChange()
 		# TODO: cache Txn or at least txid from previous merkle roots?
-		txnlist = map(a2b_hex, MP['transactions'])
+		txnlist = [a for a in map(a2b_hex, MP['transactions'])]
+		
+		t = self.makeCoinbaseTxn(MP['coinbasevalue'])
+		t.setCoinbase(b'\0\0')
+		t.assemble()
+		txnlist.insert(0, t.data)
 		
 		txnlistsz = sum(map(len, txnlist))
 		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
@@ -61,19 +66,31 @@ class merkleMaker(threading.Thread):
 			self.logger.debug('Trimming transaction for SigOp limit')
 			txnlistsz -= countSigOps(txnlist.pop())
 		
-		txnlist = map(Txn, txnlist)
-		txnlist = [None] + list(txnlist)
+		txnlist = [a for a in map(Txn, txnlist[1:])]
+		txnlist.insert(0, t)
+		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
-		if newMerkleTree.withFirst(b'') != self.currentMerkleTree.withFirst(b''):
+		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
 			self.logger.debug('Updating merkle tree')
-			newMerkleTree.coinbaseValue = MP['coinbasevalue']
 			self.currentMerkleTree = newMerkleTree
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 	
+	def makeCoinbase(self):
+		now = int(time())
+		if now > _makeCoinbase[0]:
+			_makeCoinbase[0] = now
+			_makeCoinbase[1] = 0
+		else:
+			_makeCoinbase[1] += 1
+		return self.CoinbasePrefix + pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+	
 	def makeMerkleRoot(self, merkleTree):
-		coinbaseTxn = self.makeCoinbaseTxn(merkleTree.coinbaseValue)
-		merkleRoot = merkleTree.withFirst(coinbaseTxn)
-		return (merkleRoot, merkleTree, coinbaseTxn)
+		t = merkleTree.data[0]
+		cb = self.makeCoinbase()
+		t.setCoinbase(cb)
+		t.assemble()
+		merkleRoot = merkleTree.merkleRoot()
+		return (merkleRoot, merkleTree, cb)
 	
 	_doing_last = None
 	def _doing(self, what):
@@ -97,7 +114,7 @@ class merkleMaker(threading.Thread):
 		# Next, fill up the longpoll queue first, since it can be used as a failover for the main queue
 		elif not self.clearMerkleRoots.full():
 			self._doing('blank merkle roots')
-			self.clearMerkleRoots.put(self.makeMerkleRoot(clearMerkleTree))
+			self.clearMerkleRoots.put(self.makeMerkleRoot(self.clearMerkleTree))
 		# Next, fill up the main queue (until they're all current)
 		elif len(self.merkleRoots) < self.WorkQueueSizeRegular[1] or self.merkleRoots[0][1] != self.currentMerkleTree:
 			self._doing('regular merkle roots')
@@ -127,5 +144,5 @@ class merkleMaker(threading.Thread):
 		except IndexError:
 			MRD = self.clearMerkleRoots.get()
 			rollPrevBlk = True
-		(merkleRoot, merkleTree, coinbaseTxn) = MRD
-		return (merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk)
+		(merkleRoot, merkleTree, cb) = MRD
+		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)

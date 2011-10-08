@@ -22,23 +22,10 @@ from struct import pack
 import subprocess
 from time import time
 
-CoinbasePrefix = config.CoinbasePrefix if hasattr(config, 'CoinbasePrefix') else b''
-
-def makeCoinbase():
-	now = int(time())
-	if now > makeCoinbase.last:
-		makeCoinbase.last = now
-		makeCoinbase.extranonce = 0
-	else:
-		makeCoinbase.extranonce += 1
-	return CoinbasePrefix + pack('>L', now) + pack('>Q', makeCoinbase.extranonce).lstrip(b'\0')
-makeCoinbase.last = 0
-
-def makeCoinbaseTxn(coinbaseValue):
+def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 	t = Txn.new()
-	t.setCoinbase(makeCoinbase())
 	
-	if hasattr(config, 'CoinbaserCmd'):
+	if useCoinbaser and hasattr(config, 'CoinbaserCmd'):
 		coinbased = 0
 		try:
 			cmd = config.CoinbaserCmd
@@ -61,7 +48,6 @@ def makeCoinbaseTxn(coinbaseValue):
 	
 	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
 	t.addOutput(coinbaseValue, pkScript)
-	t.assemble()
 	
 	# TODO
 	# TODO: red flag on dupe coinbase
@@ -82,6 +68,8 @@ def blockChanged():
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
+MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
+MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM._THISISUGLY = UpstreamBitcoind
@@ -100,7 +88,7 @@ if hasattr(config, 'DbOptions'):
 
 def getBlockHeader(username):
 	MRD = MM.getMRD()
-	(merkleRoot, merkleTree, coinbaseTxn, prevBlock, bits, rollPrevBlk) = MRD
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = MRD
@@ -168,8 +156,11 @@ def checkShare(share):
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
-		MRD[1].data[0] = MRD[2]
-		UpstreamBitcoind.submitBlock(data, MRD[1].data)
+		txlist = MRD[1].data
+		t = txlist[0]
+		t.setCoinbase(MRD[2])
+		t.assemble()
+		UpstreamBitcoind.submitBlock(data, txlist)
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
