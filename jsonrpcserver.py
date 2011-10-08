@@ -54,7 +54,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			return self.doError('Bad Authorization header')
 		value = b64decode(value[1])
 		value = value.split(b':')[0]
-		self.Username = value
+		self.Username = value.decode('utf8')
 	
 	def doHeader_content_length(self, value):
 		self.CL = int(value)
