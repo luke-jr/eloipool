@@ -99,6 +99,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
 		_CheckForDupesHACK[uhdr] = None
 		
+		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
 		rv['data'] = data
