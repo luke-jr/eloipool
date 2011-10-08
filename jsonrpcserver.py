@@ -91,11 +91,13 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		rv = dict(self.getwork_rv_template)
 		hdr = self.server.getBlockHeader(self.Username)
 		
-		# FIXME: this assumption breaks with noncerange or rollntime
+		# FIXME: this assumption breaks with internal rollntime
+		# NOTE: noncerange needs to set nonce to start value at least
 		global _CheckForDupesHACK
-		if hdr in _CheckForDupesHACK:
+		uhdr = hdr[:68] + hdr[72:]
+		if uhdr in _CheckForDupesHACK:
 			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
-		_CheckForDupesHACK[hdr] = None
+		_CheckForDupesHACK[uhdr] = None
 		
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
