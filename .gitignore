@@ -2,7 +2,7 @@
 *.pyo
 *~
 *.bak
-config.py
+config*.py
 jsonrpc
 *.patch
 .*.kate-swp
