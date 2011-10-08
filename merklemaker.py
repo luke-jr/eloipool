@@ -48,7 +48,11 @@ class merkleMaker(threading.Thread):
 			self.currentBlock = (prevBlock, bits)
 			self.onBlockChange()
 		# TODO: cache Txn or at least txid from previous merkle roots?
-		txnlist = map(Txn, map(a2b_hex, MP['transactions']))
+		txnlist = map(a2b_hex, MP['transactions'])
+		txnlistsz = sum(map(len, txnlist))
+		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
+			txnlistsz -= len(txnlist.pop())
+		txnlist = map(Txn, txnlist)
 		txnlist = [None] + list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
 		if newMerkleTree.withFirst(b'') != self.currentMerkleTree.withFirst(b''):
