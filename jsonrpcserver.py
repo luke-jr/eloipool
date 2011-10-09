@@ -28,7 +28,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		wfile = self.wfile
-		buf = "HTTP/1.1 %d %s\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
+		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		if body is None:
@@ -42,8 +42,8 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			headers.setdefault('X-Roll-NTime', 'expire=120')
 		for k, v in headers.items():
 			if v is None: continue
-			buf += "%s: %s\n" % (k, v)
-		buf += "\n"
+			buf += "%s: %s\r\n" % (k, v)
+		buf += "\r\n"
 		buf = buf.encode('utf8')
 		buf += body
 		wfile.write(buf)
