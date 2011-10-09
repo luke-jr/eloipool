@@ -253,6 +253,11 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 				return
 			self._LPI = True
 		
+		th = threading.Thread(target=self._LPthread)
+		th.daemon = True
+		th.start()
+	
+	def _LPthread(self):
 		self.logger.debug("(LPWLock)")
 		with self._LPWLock:
 			now = time()
