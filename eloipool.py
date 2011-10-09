@@ -177,7 +177,12 @@ checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
 	# TODO: username => userid
-	checkShare(share)
+	try:
+		checkShare(share)
+	except RejectedShare as rej:
+		share['rejectReason'] = str(rej)
+		logShare(share)
+		raise
 	# TODO
 
 def newBlockNotification(signum, frame):
