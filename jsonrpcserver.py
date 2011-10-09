@@ -77,6 +77,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		
 		with self.server._LPLock:
 			self.server._LPCount += 1
+			self.logger.debug("New LP client; %d total" % (self.server._LPCount,))
 		
 		LPWait = self.server._LPWait
 		EP = select.epoll(2)
@@ -91,6 +92,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		
 		with self.server._LPCountL:
 			self.server._LPCount -= 1
+			self.logger.debug("LP client woken; %d remaining" % (self.server._LPCount,))
 		self.server._LPSem.release()
 		
 		now = time()
@@ -235,12 +237,14 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 		self._LPWaitW = w
 	
 	def wakeLongpoll(self):
+		self.logger.debug("(LPILock)")
 		with self._LPILock:
 			if self._LPI:
 				self.logger.info('Ignoring longpoll attempt while another is waiting')
 				return
 			self._LPI = True
 		
+		self.logger.debug("(LPWLock)")
 		with self._LPWLock:
 			now = time()
 			if self._LPWaitTime > now:
@@ -253,21 +257,26 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 			self._actualLP()
 	
 	def _actualLP(self):
+		self.logger.debug("(LPLock)")
 		with self._LPLock:
 			OC = self._LPCount
 			if not OC:
 				self.logger.info('Nobody to longpoll')
 				return
+			self.logger.debug("%d clients to wake up..." % (OC,))
 			
 			now = time()
 			
 			os.close(self._LPWaitW)
 			while True:
+				self.logger.debug("... checking")
 				with self._LPCountL:
+					self.logger.debug("... %d left" % (self._LPCount,))
 					if not self._LPCount:
 						break
 				self._LPSem.acquire()
 			os.close(self._LPWait)
+			self.logger.debug("... setup new LP sockets")
 			self._setupLongpoll()
 			
 			self._LPWaitTime = time()
