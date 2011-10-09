@@ -187,6 +187,8 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			if path == b'/LP':
 				return self.doLongpoll()
 			return self.doJSON(data)
+		except socket.error:
+			raise
 		except:
 			self.logger.error(traceback.format_exc())
 			return self.doError('uncaught error')
