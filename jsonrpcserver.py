@@ -79,6 +79,15 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			self.server._LPCount += 1
 			self.logger.debug("New LP client; %d total" % (self.server._LPCount,))
 		
+		try:
+			self._finLP(waitTime)
+		except:
+			# FIXME: this will probably break the LPs :(
+			self.logger.critical('Longpoll waiter crashed after registering. :(')
+			raise
+	
+	def _finLP(self, waitTime):
+		wfile = self.wfile
 		LPWait = self.server._LPWait
 		EP = select.epoll(2)
 		EP.register(LPWait, select.EPOLLIN)
@@ -268,13 +277,9 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 			now = time()
 			
 			os.close(self._LPWaitW)
-			while True:
-				self.logger.debug("... checking")
-				with self._LPCountL:
-					self.logger.debug("... %d left" % (self._LPCount,))
-					if not self._LPCount:
-						break
+			for i in range(OC):
 				self._LPSem.acquire()
+				self.logger.debug("... %d left" % (self._LPCount,))
 			os.close(self._LPWait)
 			self.logger.debug("... setup new LP sockets")
 			self._setupLongpoll()
