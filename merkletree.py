@@ -6,25 +6,36 @@ except ImportError:
 from util import dblsha
 
 class MerkleTree:
-	def __init__(self, data):
+	def __init__(self, data, detailed=False):
 		self.data = data
-		self.recalculate()
+		self.recalculate(detailed)
 	
-	def recalculate(self):
+	def recalculate(self, detailed=False):
 		L = self.data
 		steps = []
-		if len(L) > 1:
+		if detailed:
+			detail = []
+			PreL = []
+			StartL = 0
+		else:
+			detail = None
+			PreL = [None]
+			StartL = 2
+		if detailed or len(L) > 1:
 			if isinstance(L[1], Txn):
 				L = list(map(lambda a: a.txid if a else a, L))
 			while True:
+				if detailed:
+					detail += L
 				Ll = len(L)
-				steps.append(L[1])
-				if Ll == 2:
+				if Ll == 1:
 					break
+				steps.append(L[1])
 				if Ll % 2:
 					L += [L[-1]]
-				L = [None] + [dblsha(L[i] + L[i + 1]) for i in range(2, Ll, 2)]
+				L = PreL + [dblsha(L[i] + L[i + 1]) for i in range(StartL, Ll, 2)]
 		self._steps = steps
+		self.detail = detail
 	
 	def withFirst(self, f):
 		if isinstance(f, Txn):
