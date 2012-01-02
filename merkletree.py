@@ -21,19 +21,20 @@ class MerkleTree:
 			detail = None
 			PreL = [None]
 			StartL = 2
-		if detailed or len(L) > 1:
-			if isinstance(L[1], Txn):
+		Ll = len(L)
+		if detailed or Ll > 1:
+			if isinstance(L[1] if Ll > 1 else L[0], Txn):
 				L = list(map(lambda a: a.txid if a else a, L))
 			while True:
 				if detailed:
 					detail += L
-				Ll = len(L)
 				if Ll == 1:
 					break
 				steps.append(L[1])
 				if Ll % 2:
 					L += [L[-1]]
 				L = PreL + [dblsha(L[i] + L[i + 1]) for i in range(StartL, Ll, 2)]
+				Ll = len(L)
 		self._steps = steps
 		self.detail = detail
 	
