@@ -1,4 +1,8 @@
-from bitcoin.txn import Txn
+try:
+	from bitcoin.txn import Txn
+except ImportError:
+	class Txn:
+		pass
 from util import dblsha
 
 class MerkleTree:
