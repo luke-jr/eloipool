@@ -1,3 +1,5 @@
+import asynchat
+import asyncore
 from base64 import b64decode
 from binascii import a2b_hex, b2a_hex
 from datetime import datetime
@@ -5,17 +7,20 @@ from email.utils import formatdate
 import json
 import logging
 import os
+import re
 import select
 import socket
-import socketserver
 import threading
 from time import mktime, time, sleep
 import traceback
 from util import RejectedShare, swap32
 
+class WithinLongpoll(BaseException):
+	pass
+
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
-class JSONRPCHandler(socketserver.StreamRequestHandler):
+class JSONRPCHandler(asynchat.async_chat):
 	HTTPStatus = {
 		200: 'OK',
 		401: 'Unauthorized',
@@ -27,7 +32,6 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 	logger = logging.getLogger('JSONRPCHandler')
 	
 	def sendReply(self, status=200, body=b'', headers=None):
-		wfile = self.wfile
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
@@ -46,7 +50,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 		buf += "\r\n"
 		buf = buf.encode('utf8')
 		buf += body
-		wfile.write(buf)
+		self.push(buf)
 	
 	def doError(self, reason = ''):
 		return self.sendReply(500, reason.encode('utf8'))
@@ -70,50 +74,48 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 	
 	def doLongpoll(self):
 		self.sendReply(200, body=None)
-		wfile = self.wfile
-		wfile.write(b"1\r\n{\r\n")
+		self.push(b"1\r\n{\r\n")
 		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
-		waitTime += time()
+		timeNow = time()
+		self.waitTime = waitTime + timeNow
 		
 		with self.server._LPLock:
-			self.server._LPCount += 1
-			self.logger.debug("New LP client; %d total" % (self.server._LPCount,))
+			self.server._LPClients[id(self)] = self
+			self.server.schedule(self._chunkedKA, timeNow + 45)
+			self.logger.debug("New LP client; %d total" % (len(self.server._LPClients),))
 		
-		try:
-			self._finLP(waitTime)
-		except:
-			# FIXME: this will probably break the LPs :(
-			self.logger.critical('Longpoll waiter crashed after registering. :(')
-			raise
+		raise WithinLongpoll
 	
-	def _finLP(self, waitTime):
-		wfile = self.wfile
-		LPWait = self.server._LPWait
-		EP = select.epoll(2)
-		EP.register(LPWait, select.EPOLLIN)
-		while True:
-			ev = EP.poll(45)  # TODO: make keepalive configurable
-			if len(ev):
-				break
-			# Keepalive via chunked transfer encoding
-			wfile.write(b"1\r\n \r\n")
-			wfile.flush()
-		
-		with self.server._LPCountL:
-			self.server._LPCount -= 1
-			self.logger.debug("LP client woken; %d remaining" % (self.server._LPCount,))
-		self.server._LPSem.release()
+	def _chunkedKA(self):
+		# Keepalive via chunked transfer encoding
+		self.push(b"1\r\n \r\n")
+		self.server.schedule(self._chunkedKA, time() + 45)
+	
+	def cleanupLP(self):
+		# Called when either the connection is closed, or LP is about to be sent
+		with self.server._LPLock:
+			try:
+				del self.server._LPClients[id(self)]
+			except KeyError:
+				pass
+		self.server.rmSchedule(self._chunkedKA, self.wakeLongpoll)
+	
+	def wakeLongpoll(self):
+		self.cleanupLP()
 		
 		now = time()
-		if now < waitTime:
-			sleep(waitTime - now);
+		if now < self.waitTime:
+			self.server.schedule(self.wakeLongpoll, self.waitTime)
+			return
 		
 		rv = self.doJSON_getwork()
 		rv = {'id': 1, 'error': None, 'result': rv}
 		rv = json.dumps(rv)
 		rv = rv.encode('utf8')
 		rv = rv[1:]  # strip the '{' we already sent
-		wfile.write(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
+		self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
+		
+		self.reset_request()
 	
 	def doJSON(self, data):
 		# TODO: handle JSON errors
@@ -161,7 +163,7 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			'data': data,
 			'_origdata' : datax,
 			'username': self.Username,
-			'remoteHost': self.request.getpeername()[0],
+			'remoteHost': self.addr,
 		}
 		try:
 			self.server.receiveShare(share)
@@ -170,80 +172,227 @@ class JSONRPCHandler(socketserver.StreamRequestHandler):
 			return False
 		return True
 	
-	def handle_i(self):
-		# TODO: handle socket errors
-		rfile = self.rfile
-		data = rfile.readline().strip()
-		data = data.split(b' ')
-		if not data[0] in (b'GET', b'POST'):
-			return self.sendReply(405)
-		path = data[1]
-		if not path in (b'/', b'/LP'):
-			return self.sendReply(404)
-		self.CL = None
-		self.Username = None
-		self.reqinfo = {}
-		while True:
-			data = rfile.readline().strip()
-			if not data:
-				break
-			data = tuple(map(lambda a: a.strip(), data.split(b':', 1)))
-			method = 'doHeader_' + data[0].decode('ascii').lower()
-			if hasattr(self, method):
-				getattr(self, method)(data[1])
+	def handle_close(self):
+		self.cleanupLP()
+		self.close()
+	
+	def handle_request(self):
 		if not self.Username:
 			return self.doAuthenticate()
-		data = rfile.read(self.CL) if self.CL else None
+		if not self.method in (b'GET', b'POST'):
+			return self.sendReply(405)
+		if not self.path in (b'/', b'/LP', b'/LP/'):
+			return self.sendReply(404)
 		try:
-			if path == b'/LP':
+			if self.path[:3] == b'/LP':
 				return self.doLongpoll()
+			data = b''.join(self.incoming)
 			return self.doJSON(data)
 		except socket.error:
+			raise
+		except WithinLongpoll:
 			raise
 		except:
 			self.logger.error(traceback.format_exc())
 			return self.doError('uncaught error')
 	
-	def handle(self):
+	def parse_headers(self, hs):
+		hs = re.split(br'\r?\n', hs)
+		data = hs.pop(0).split(b' ')
+		self.method = data[0]
+		self.path = data[1]
+		self.CL = None
+		self.Username = None
+		self.reqinfo = {}
+		while True:
+			try:
+				data = hs.pop(0)
+			except IndexError:
+				break
+			data = tuple(map(lambda a: a.strip(), data.split(b':', 1)))
+			method = 'doHeader_' + data[0].decode('ascii').lower()
+			if hasattr(self, method):
+				getattr(self, method)(data[1])
+	
+	def found_terminator(self):
+		if self.reading_headers:
+			self.reading_headers = False
+			self.parse_headers(b"".join(self.incoming))
+			self.incoming = []
+			if self.CL:
+				self.set_terminator(self.CL)
+				return
+		
+		self.set_terminator(None)
 		try:
-			while True:
-				self.handle_i()
-		except socket.error:
+			self.handle_request()
+			self.reset_request()
+		except WithinLongpoll:
 			pass
+	
+	def handle_read (self):
+		try:
+			data = self.recv (self.ac_in_buffer_size)
+		except socket.error as why:
+			self.handle_error()
+			return
+		
+		if isinstance(data, str) and self.use_encoding:
+			data = bytes(str, self.encoding)
+		self.ac_in_buffer = self.ac_in_buffer + data
+		
+		# Continue to search for self.terminator in self.ac_in_buffer,
+		# while calling self.collect_incoming_data.  The while loop
+		# is necessary because we might read several data+terminator
+		# combos with a single recv(4096).
+		
+		while self.ac_in_buffer:
+			lb = len(self.ac_in_buffer)
+			terminator = self.get_terminator()
+			if not terminator:
+				# no terminator, collect it all
+				self.collect_incoming_data (self.ac_in_buffer)
+				self.ac_in_buffer = b''
+			elif isinstance(terminator, int):
+				# numeric terminator
+				n = terminator
+				if lb < n:
+					self.collect_incoming_data (self.ac_in_buffer)
+					self.ac_in_buffer = b''
+					self.terminator = self.terminator - lb
+				else:
+					self.collect_incoming_data (self.ac_in_buffer[:n])
+					self.ac_in_buffer = self.ac_in_buffer[n:]
+					self.terminator = 0
+					self.found_terminator()
+			else:
+				# 3 cases:
+				# 1) end of buffer matches terminator exactly:
+				#    collect data, transition
+				# 2) end of buffer matches some prefix:
+				#    collect data to the prefix
+				# 3) end of buffer does not match any prefix:
+				#    collect data
+				# NOTE: this supports multiple different terminators, but
+				#       NOT ones that are prefixes of others...
+				if isinstance(self.ac_in_buffer, type(terminator)):
+					terminator = (terminator,)
+				termidx = tuple(map(self.ac_in_buffer.find, terminator))
+				try:
+					index = min(x for x in termidx if x >= 0)
+				except ValueError:
+					index = -1
+				if index != -1:
+					# we found the terminator
+					if index > 0:
+						# don't bother reporting the empty string (source of subtle bugs)
+						self.collect_incoming_data (self.ac_in_buffer[:index])
+					specific_terminator = terminator[termidx.index(index)]
+					terminator_len = len(specific_terminator)
+					self.ac_in_buffer = self.ac_in_buffer[index+terminator_len:]
+					# This does the Right Thing if the terminator is changed here.
+					self.found_terminator()
+				else:
+					# check for a prefix of the terminator
+					termidx = tuple(map(lambda a: asynchat.find_prefix_at_end (self.ac_in_buffer, a), terminator))
+					index = min(x for x in termidx if x >= 0)
+					if index:
+						if index != lb:
+							# we found a prefix, collect up to the prefix
+							self.collect_incoming_data (self.ac_in_buffer[:-index])
+							self.ac_in_buffer = self.ac_in_buffer[-index:]
+						break
+					else:
+						# no prefix, collect it all
+						self.collect_incoming_data (self.ac_in_buffer)
+						self.ac_in_buffer = b''
+	
+	def reset_request(self):
+		self.incoming = []
+		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
+		self.reading_headers = True
+	
+	def collect_incoming_data(self, data):
+		asynchat.async_chat._collect_incoming_data(self, data)
+	
+	def __init__(self, sock, addr, map):
+		asynchat.async_chat.__init__(self, sock=sock, map=map)
+		self.addr = addr
+		self.reset_request()
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 
-class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-	allow_reuse_address = True
-	daemon_threads = True
-	
-	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, *a, **k):
+class JSONRPCServer(asyncore.dispatcher):
+	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, map={}):
 		self.logger = logging.getLogger('JSONRPCServer')
 		
-		self._LPCount = 0
-		self._LPCountL = threading.Lock()
-		self._LPLock = threading.Lock()
-		self._LPSem = threading.Semaphore(0)
+		asyncore.dispatcher.__init__(self, map=map)
+		self.map = map
+		self.create_socket(socket.AF_INET6, socket.SOCK_STREAM)
+		self.set_reuse_addr()
+		self.bind(server_address)
+		self.listen(100)
+		#self.server_address = self.socket.getsockname()
+		
+		self._schLock = threading.RLock()
+		self._sch = []
+		
+		self._LPClients = {}
+		self._LPLock = threading.RLock()
 		self._LPWaitTime = time() + 15
 		self._LPILock = threading.Lock()
 		self._LPI = False
 		self._LPWLock = threading.Lock()
-		self._setupLongpoll()
-		
-		super().__init__(server_address, RequestHandlerClass, *a, **k)
 	
-	def serve_forever(self, *a, **k):
+	def handle_accept(self):
+		conn, addr = self.accept()
+		h = JSONRPCHandler(conn, addr, map=self.map)
+		h.server = self
+	
+	def schedule(self, task, startTime):
+		with self._schLock:
+			IL = len(self._sch)
+			while IL and startTime < self._sch[IL-1][0]:
+				IL -= 1
+			self._sch.insert(IL, (startTime, task))
+	
+	def rmSchedule(self, *tasks):
+		tasks = list(tasks)
+		with self._schLock:
+			i = 0
+			SL = len(self._sch)
+			while i < SL:
+				if self._sch[i][1] in tasks:
+					tasks.remove(self._sch[i][1])
+					del self._sch[i]
+					if not tasks:
+						break
+					SL -= 1
+				else:
+					i += 1
+	
+	def serve_forever(self):
 		while True:
+			with self._schLock:
+				if len(self._sch):
+					timeNow = time()
+					while True:
+						timeNext = self._sch[0][0]
+						if timeNow < timeNext:
+							timeout = timeNext - timeNow
+							break
+						f = self._sch.pop(0)[1]
+						f()
+						if not len(self._sch):
+							timeout = None
+							break
+				else:
+					timeout = None
 			try:
-				super().serve_forever(*a, **k)
+				asyncore.loop(use_poll=True, map=self.map, timeout=timeout, count=1)
 			except select.error:
 				pass
-	
-	def _setupLongpoll(self):
-		(r, w) = os.pipe()
-		self._LPWait = r
-		self._LPWaitW = w
 	
 	def wakeLongpoll(self):
 		self.logger.debug("(LPILock)")
@@ -273,22 +422,18 @@ class JSONRPCServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 	def _actualLP(self):
 		self.logger.debug("(LPLock)")
 		with self._LPLock:
-			OC = self._LPCount
-			if not OC:
+			C = tuple(self._LPClients.values())
+			if not C:
 				self.logger.info('Nobody to longpoll')
 				return
+			OC = len(C)
 			self.logger.debug("%d clients to wake up..." % (OC,))
 			
 			now = time()
 			
-			os.close(self._LPWaitW)
-			for i in range(OC):
-				self._LPSem.acquire()
-				self.logger.debug("... %d left" % (self._LPCount,))
-			os.close(self._LPWait)
-			self.logger.debug("... setup new LP sockets")
-			self._setupLongpoll()
+			for ic in C:
+				ic.wakeLongpoll()
 			
 			self._LPWaitTime = time()
-			self.logger.info('Longpoll woke up %d clients in %.3g seconds' % (OC, self._LPWaitTime - now))
+			self.logger.info('Longpoll woke up %d clients in %.3f seconds' % (OC, self._LPWaitTime - now))
 			self._LPWaitTime += 5  # TODO: make configurable: minimum time between longpolls
