@@ -198,7 +198,7 @@ from jsonrpcserver import JSONRPCServer
 import interactivemode
 
 if __name__ == "__main__":
-	server = JSONRPCServer(('', 8444))
+	server = JSONRPCServer(config.JSONRPCAddress)
 	server.getBlockHeader = getBlockHeader
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
