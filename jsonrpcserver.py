@@ -46,6 +46,7 @@ class JSONRPCHandler:
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
+		headers.setdefault('Server', 'Eloipool')
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
 			body = b''
