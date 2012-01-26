@@ -88,10 +88,11 @@ class JSONRPCHandler(asynchat.async_chat):
 		timeNow = time()
 		self.waitTime = waitTime + timeNow
 		
+		totfromme = self.LPTrack()
 		with self.server._LPLock:
 			self.server._LPClients[id(self)] = self
 			self.server.schedule(self._chunkedKA, timeNow + 45)
-			self.logger.debug("New LP client; %d total" % (len(self.server._LPClients),))
+			self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
 		
 		raise WithinLongpoll
 	
@@ -100,22 +101,33 @@ class JSONRPCHandler(asynchat.async_chat):
 		self.push(b"1\r\n \r\n")
 		self.server.schedule(self._chunkedKA, time() + 45)
 	
+	def LPTrack(self):
+		myip = self.addr[0]
+		if myip not in self.server.LPTracking:
+			self.server.LPTracking[myip] = 0
+		self.server.LPTracking[myip] += 1
+		return self.server.LPTracking[myip]
+	
+	def LPUntrack(self):
+		self.server.LPTracking[self.addr[0]] -= 1
+	
 	def cleanupLP(self):
 		# Called when the connection is closed
 		with self.server._LPLock:
 			try:
 				del self.server._LPClients[id(self)]
+				self.LPUntrack()
 			except KeyError:
 				pass
 		self.server.rmSchedule(self._chunkedKA, self.wakeLongpoll)
 	
 	def wakeLongpoll(self):
-		self.cleanupLP()
-		
 		now = time()
 		if now < self.waitTime:
 			self.server.schedule(self.wakeLongpoll, self.waitTime)
 			return
+		
+		self.LPUntrack()
 		
 		self.server.rmSchedule(self._chunkedKA)
 		
@@ -178,7 +190,7 @@ class JSONRPCHandler(asynchat.async_chat):
 			'data': data,
 			'_origdata' : datax,
 			'username': self.Username,
-			'remoteHost': self.addr,
+			'remoteHost': self.addr[0],
 		}
 		try:
 			self.server.receiveShare(share)
@@ -373,6 +385,8 @@ class JSONRPCServer(asyncore.dispatcher):
 		self._LPILock = threading.Lock()
 		self._LPI = False
 		self._LPWLock = threading.Lock()
+		
+		self.LPTracking = {}
 	
 	def handle_accept(self):
 		conn, addr = self.accept()
