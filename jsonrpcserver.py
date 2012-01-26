@@ -135,7 +135,7 @@ class JSONRPCHandler(asynchat.async_chat):
 			return self.doError('No such method')
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
-		rv = getattr(self, method)(*tuple(data['params']))
+		rv = getattr(self, method)(*tuple(data.get('params', ())))
 		if rv is None:
 			return
 		rv = {'id': data['id'], 'error': None, 'result': rv}
