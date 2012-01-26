@@ -91,10 +91,17 @@ from struct import pack, unpack
 from time import time
 from util import RejectedShare, dblsha, hash2int
 import jsonrpc
+import threading
 
 gotwork = None
 if hasattr(config, 'GotWorkURI'):
 	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
+
+def submitGotwork(info):
+	try:
+		gotwork.gotwork(info)
+	except:
+		checkShare.logger.warning('Failed to submit gotwork')
 
 db = None
 if hasattr(config, 'DbOptions'):
@@ -187,7 +194,7 @@ def checkShare(share):
 		MM.updateBlock(blkhash)
 	
 	# Gotwork hack...
-	if gotwork:
+	if gotwork and blkhashn <= config.GotWorkTarget:
 		try:
 			coinbaseMrkl = t.data
 			coinbaseMrkl += blkhash
@@ -201,9 +208,11 @@ def checkShare(share):
 			info['hash'] = b2a_hex(blkhash).decode('ascii')
 			info['header'] = b2a_hex(data).decode('ascii')
 			info['coinbaseMrkl'] = b2a_hex(coinbaseMrkl).decode('ascii')
-			gotwork.gotwork(info)
+			thr = threading.Thread(target=submitGotwork, args=(info,))
+			thr.daemon = True
+			thr.start()
 		except:
-			checkShare.logger.warning('Failed to submit gotwork')
+			checkShare.logger.warning('Failed to build gotwork request')
 	
 	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')

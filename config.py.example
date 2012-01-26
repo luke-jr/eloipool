@@ -41,6 +41,9 @@ UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 # URI to send gotwork with info for every share submission
 #GotWorkURI = ''
 
+# Share hashes must be below this to be submitted to gotwork
+GotWorkTarget = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
 ### Settings relating to network services
 
 # Address to listen on for JSON-RPC getwork server
