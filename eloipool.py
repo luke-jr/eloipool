@@ -90,6 +90,11 @@ from binascii import b2a_hex
 from struct import pack, unpack
 from time import time
 from util import RejectedShare, dblsha, hash2int
+import jsonrpc
+
+gotwork = None
+if hasattr(config, 'GotWorkURI'):
+	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
 
 db = None
 if hasattr(config, 'DbOptions'):
@@ -170,15 +175,35 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
+	txlist = MRD[1].data
+	t = txlist[0]
+	t.setCoinbase(MRD[2])
+	t.assemble()
+	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
-		txlist = MRD[1].data
-		t = txlist[0]
-		t.setCoinbase(MRD[2])
-		t.assemble()
 		UpstreamBitcoind.submitBlock(data, txlist)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
+	
+	# Gotwork hack...
+	if gotwork:
+		try:
+			coinbaseMrkl = t.data
+			coinbaseMrkl += blkhash
+			steps = MRD[1]._steps
+			coinbaseMrkl += pack('B', len(steps) + 1)
+			coinbaseMrkl += t.txid
+			for step in steps:
+				coinbaseMrkl += step
+			coinbaseMrkl += b"\0\0\0\0"
+			info = {}
+			info['hash'] = b2a_hex(blkhash).decode('ascii')
+			info['header'] = b2a_hex(data).decode('ascii')
+			info['coinbaseMrkl'] = b2a_hex(coinbaseMrkl).decode('ascii')
+			gotwork.gotwork(info)
+		except:
+			checkShare.logger.warning('Failed to submit gotwork')
 	
 	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')

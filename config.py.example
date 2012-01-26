@@ -38,6 +38,9 @@ UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 # Secret username allowed to use setworkaux
 #SecretUser = ""
 
+# URI to send gotwork with info for every share submission
+#GotWorkURI = ''
+
 ### Settings relating to network services
 
 # Address to listen on for JSON-RPC getwork server
