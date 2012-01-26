@@ -141,6 +141,7 @@ class JSONRPCHandler:
 		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
 		
 		rv = self.doJSON_getwork()
+		rv['submitold'] = True
 		rv = {'id': 1, 'error': None, 'result': rv}
 		rv = json.dumps(rv)
 		rv = rv.encode('utf8')
