@@ -562,3 +562,9 @@ class JSONRPCServer:
 			self._LPWaitTime = time()
 			self.logger.info('Longpoll woke up %d clients in %.3f seconds' % (OC, self._LPWaitTime - now))
 			self._LPWaitTime += 5  # TODO: make configurable: minimum time between longpolls
+	
+	def TopLPers(self, n = 0x10):
+		tmp = list(self.LPTracking.keys())
+		tmp.sort(key=lambda k: self.LPTracking[k])
+		for jerk in map(lambda k: (k, server.LPTracking[k]), tmp[-n:]):
+			print(jerk)
