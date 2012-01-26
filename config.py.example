@@ -1,11 +1,11 @@
 ### Settings relating to server scaling/load
 
 # Minimum and maximum of merkle roots to keep queued
-WorkQueueSizeRegular = (50, 1000)
+WorkQueueSizeRegular = (0x100, 0x1000)
 
 # Minimum and maximum of BLANK merkle roots to keep queued
 # (used if we run out of populated ones, usually after a block is found)
-WorkQueueSizeLongpoll = (2000, 5000)
+WorkQueueSizeLongpoll = (0x1000, 0x2000)
 
 # How long to wait between getmemorypool updates normally
 MinimumTxnUpdateWait = 5
