@@ -5,6 +5,8 @@ import config
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
+for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker'):
+	logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
 	logging.getLogger('redflag').critical(reason)
