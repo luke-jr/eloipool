@@ -115,7 +115,7 @@ def getBlockHeader(username):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
-	workLog.setdefault(username, {})[merkleRoot] = MRD
+	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return hdr
 
 def YN(b):
@@ -162,7 +162,7 @@ def checkShare(share):
 	MWL = workLog[username]
 	if shareMerkleRoot not in MWL:
 		raise RejectedShare('unknown-work')
-	MRD = MWL[shareMerkleRoot]
+	(MRD, t) = MWL[shareMerkleRoot]
 	share['MRD'] = MRD
 	
 	if data in DupeShareHACK:
@@ -171,6 +171,8 @@ def checkShare(share):
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	shareTime = share['time'] = time()
+	if shareTime < t - 120:
+		raise RejectedShare('stale-work')
 	if shareTimestamp < shareTime - 300:
 		raise RejectedShare('time-too-old')
 	if shareTimestamp > shareTime + 7200:
