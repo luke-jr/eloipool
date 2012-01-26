@@ -87,7 +87,9 @@ class JSONRPCHandler:
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
 	
 	def doLongpoll(self):
-		self.sendReply(200, body=None)
+		headers = {}
+		headers['X-Long-Polling'] = None
+		self.sendReply(200, body=None, headers=headers)
 		self.push(b"1\r\n{\r\n")
 		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		timeNow = time()
