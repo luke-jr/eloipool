@@ -425,7 +425,7 @@ class JSONRPCListener:
 		h = server.RequestHandlerClass(server, conn, addr)
 
 class JSONRPCServer:
-	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler):
+	def __init__(self, server_address=None, RequestHandlerClass=JSONRPCHandler):
 		self.logger = logging.getLogger('JSONRPCServer')
 		
 		self.RequestHandlerClass = RequestHandlerClass
