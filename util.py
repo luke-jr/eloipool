@@ -1,5 +1,6 @@
 from hashlib import sha256
 from struct import unpack
+import traceback
 
 def dblsha(b):
 	return sha256(sha256(b).digest()).digest()
@@ -17,6 +18,13 @@ def hash2int(h):
 	n = unpack('<QQQQ', h)
 	n = (n[3] << 192) | (n[2] << 128) | (n[1] << 64) | n[0]
 	return n
+
+def tryErr(logger, func, *a, **kw):
+	try:
+		return func(*a, **kw)
+	except:
+		logger.error(traceback.format_exc())
+		return None
 
 class RejectedShare(ValueError):
 	pass

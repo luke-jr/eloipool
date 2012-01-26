@@ -1,5 +1,4 @@
 import asynchat
-import asyncore
 from base64 import b64decode
 from binascii import a2b_hex, b2a_hex
 from datetime import datetime
@@ -19,14 +18,17 @@ from struct import pack
 import threading
 from time import mktime, time, sleep
 import traceback
-from util import RejectedShare, swap32
+from util import RejectedShare, swap32, tryErr
 
 class WithinLongpoll(BaseException):
 	pass
 
+EPOLL_READ = select.EPOLLIN | select.EPOLLPRI | select.EPOLLERR | select.EPOLLHUP
+EPOLL_WRITE = select.EPOLLOUT
+
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
-class JSONRPCHandler(asynchat.async_chat):
+class JSONRPCHandler:
 	HTTPStatus = {
 		200: 'OK',
 		401: 'Unauthorized',
@@ -36,6 +38,9 @@ class JSONRPCHandler(asynchat.async_chat):
 	}
 	
 	logger = logging.getLogger('JSONRPCHandler')
+	
+	ac_in_buffer_size = 4096
+	ac_out_buffer_size = 4096
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
@@ -271,6 +276,13 @@ class JSONRPCHandler(asynchat.async_chat):
 		except WithinLongpoll:
 			pass
 	
+	def handle_error(self):
+		self.logger.error(traceback.format_exc())
+		self.handle_close()
+	
+	get_terminator = asynchat.async_chat.get_terminator
+	set_terminator = asynchat.async_chat.set_terminator
+	
 	def handle_read (self):
 		try:
 			data = self.recv (self.ac_in_buffer_size)
@@ -356,28 +368,43 @@ class JSONRPCHandler(asynchat.async_chat):
 	def collect_incoming_data(self, data):
 		asynchat.async_chat._collect_incoming_data(self, data)
 	
-	def __init__(self, sock, addr, map):
-		asynchat.async_chat.__init__(self, sock=sock, map=map)
+	def push(self, data):
+		self.wbuf += data
+		self.server.register_socket_m(self.socket, EPOLL_READ | EPOLL_WRITE)
+	
+	def handle_write(self):
+		bs = self.socket.send(self.wbuf)
+		self.wbuf = self.wbuf[bs:]
+		if not len(self.wbuf):
+			self.server.register_socket_m(self.socket, EPOLL_READ)
+	
+	recv = asynchat.async_chat.recv
+	
+	def close(self):
+		self.server.unregister_socket(self.socket)
+		self.socket.close()
+	
+	def __init__(self, server, sock, addr):
+		self.ac_in_buffer = b''
+		self.wbuf = b''
+		self.server = server
+		self.socket = sock
 		self.addr = addr
 		self.reset_request()
+		server.register_socket(sock, self)
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);
 
-class JSONRPCServer(asyncore.dispatcher):
-	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, map={}):
+class JSONRPCServer:
+	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler):
 		self.logger = logging.getLogger('JSONRPCServer')
 		
-		asyncore.dispatcher.__init__(self, map=map)
-		self.map = map
-		self.create_socket(socket.AF_INET6, socket.SOCK_STREAM)
-		self.set_reuse_addr()
-		self.bind(server_address)
-		self.listen(100)
-		#self.server_address = self.socket.getsockname()
-		
 		self.SecretUser = None
+		
+		self._epoll = select.epoll()
+		self._fd = {}
 		
 		self._schLock = threading.RLock()
 		self._sch = []
@@ -390,11 +417,39 @@ class JSONRPCServer(asyncore.dispatcher):
 		self._LPWLock = threading.Lock()
 		
 		self.LPTracking = {}
+		
+		if server_address:
+			self.setup_socket(server_address)
 	
-	def handle_accept(self):
-		conn, addr = self.accept()
-		h = JSONRPCHandler(conn, addr, map=self.map)
-		h.server = self
+	def setup_socket(self, server_address):
+		sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+		sock.setblocking(0)
+		try:
+			sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		except socket.error:
+			pass
+		sock.bind(server_address)
+		sock.listen(100)
+		self.register_socket(sock, self)
+		self.socket = sock
+	
+	def register_socket(self, sock, o, eventmask = EPOLL_READ):
+		fd = sock.fileno()
+		self._epoll.register(fd, eventmask)
+		self._fd[fd] = o
+	
+	def register_socket_m(self, sock, eventmask):
+		fd = sock.fileno()
+		self._epoll.modify(fd, eventmask)
+	
+	def unregister_socket(self, sock):
+		fd = sock.fileno()
+		self._epoll.unregister(fd)
+		del self._fd[fd]
+	
+	def handle_read(self):
+		conn, addr = self.socket.accept()
+		h = JSONRPCHandler(self, conn, addr)
 	
 	def schedule(self, task, startTime):
 		with self._schLock:
@@ -431,14 +486,20 @@ class JSONRPCServer(asyncore.dispatcher):
 						f = self._sch.pop(0)[1]
 						f()
 						if not len(self._sch):
-							timeout = None
+							timeout = -1
 							break
 				else:
-					timeout = None
+					timeout = -1
 			try:
-				asyncore.loop(use_poll=True, map=self.map, timeout=timeout, count=1)
+				events = self._epoll.poll(timeout=timeout)
 			except select.error:
-				pass
+				continue
+			for (fd, e) in events:
+				o = self._fd[fd]
+				if e & EPOLL_READ:
+					tryErr(self.logger, o.handle_read)
+				if e & EPOLL_WRITE:
+					tryErr(self.logger, o.handle_write)
 	
 	def wakeLongpoll(self):
 		self.logger.debug("(LPILock)")
