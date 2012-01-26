@@ -402,9 +402,33 @@ setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_conte
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);
 
+class JSONRPCListener:
+	def __init__(self, server, server_address):
+		self.server = server
+		self.setup_socket(server_address)
+	
+	def setup_socket(self, server_address):
+		sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+		sock.setblocking(0)
+		try:
+			sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		except socket.error:
+			pass
+		sock.bind(server_address)
+		sock.listen(100)
+		self.server.register_socket(sock.fileno(), self)
+		self.socket = sock
+	
+	def handle_read(self):
+		server = self.server
+		conn, addr = self.socket.accept()
+		h = server.RequestHandlerClass(server, conn, addr)
+
 class JSONRPCServer:
 	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler):
 		self.logger = logging.getLogger('JSONRPCServer')
+		
+		self.RequestHandlerClass = RequestHandlerClass
 		
 		self.SecretUser = None
 		
@@ -424,20 +448,9 @@ class JSONRPCServer:
 		
 		self.LPTracking = {}
 		
+		self._lo = []
 		if server_address:
-			self.setup_socket(server_address)
-	
-	def setup_socket(self, server_address):
-		sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-		sock.setblocking(0)
-		try:
-			sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-		except socket.error:
-			pass
-		sock.bind(server_address)
-		sock.listen(100)
-		self.register_socket(sock.fileno(), self)
-		self.socket = sock
+			JSONRPCListener(self, server_address)
 	
 	def register_socket(self, fd, o, eventmask = EPOLL_READ):
 		self._epoll.register(fd, eventmask)
@@ -455,10 +468,6 @@ class JSONRPCServer:
 			self._epoll.unregister(fd)
 		except IOError:
 			raise socket.error
-	
-	def handle_read(self):
-		conn, addr = self.socket.accept()
-		h = JSONRPCHandler(self, conn, addr)
 	
 	def schedule(self, task, startTime, errHandler=None):
 		with self._schLock:
