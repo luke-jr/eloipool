@@ -153,6 +153,12 @@ def checkShare(share):
 	username = share['username']
 	if username not in workLog:
 		raise RejectedShare('unknown-user')
+	
+	if data[72:76] != bits:
+		raise RejectedShare('bad-diffbits')
+	if data[:4] != b'\1\0\0\0':
+		raise RejectedShare('bad-version')
+	
 	MWL = workLog[username]
 	if shareMerkleRoot not in MWL:
 		raise RejectedShare('unknown-work')
@@ -169,10 +175,6 @@ def checkShare(share):
 		raise RejectedShare('time-too-old')
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
-	if data[72:76] != bits:
-		raise RejectedShare('bad-diffbits')
-	if data[:4] != b'\1\0\0\0':
-		raise RejectedShare('bad-version')
 	
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':
