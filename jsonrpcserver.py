@@ -6,6 +6,11 @@ from datetime import datetime
 from email.utils import formatdate
 import json
 import logging
+try:
+	import midstate
+	assert midstate.SHA256("This is just a test, ignore it. I am making it over 64-bytes long.")[:8] == (0x755f1a94, 0x999b270c, 0xf358c014, 0xfd39caeb, 0x0dcc9ebc, 0x4694cd1a, 0x8e95678e, 0x75fac450)
+except:
+	midstate = None
 import os
 import re
 import select
@@ -68,6 +73,9 @@ class JSONRPCHandler(asynchat.async_chat):
 	
 	def doHeader_x_minimum_wait(self, value):
 		self.reqinfo['MinWait'] = int(value)
+	
+	def doHeader_x_mining_extensions(self, value):
+		self.extensions = value.decode('ascii').lower().split(' ')
 	
 	def doAuthenticate(self):
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
@@ -154,7 +162,9 @@ class JSONRPCHandler(asynchat.async_chat):
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
 		rv['data'] = data
-		# TODO: rv['midstate'] = 
+		if midstate and 'midstate' not in self.extensions:
+			h = midstate.SHA256(hdr)[:8]
+			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h))
 		return rv
 	
 	def doJSON_submitwork(self, datax):
@@ -202,6 +212,7 @@ class JSONRPCHandler(asynchat.async_chat):
 		self.method = data[0]
 		self.path = data[1]
 		self.CL = None
+		self.extensions = []
 		self.Username = None
 		self.reqinfo = {}
 		while True:
@@ -322,6 +333,7 @@ class JSONRPCHandler(asynchat.async_chat):
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
+setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);
 
 class JSONRPCServer(asyncore.dispatcher):
 	def __init__(self, server_address, RequestHandlerClass=JSONRPCHandler, map={}):
