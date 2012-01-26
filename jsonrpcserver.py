@@ -490,7 +490,7 @@ class JSONRPCServer:
 					if e & EPOLL_WRITE:
 						o.handle_write()
 				except:
-					self.logger(traceback.format_exc())
+					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
 	
 	def wakeLongpoll(self):
