@@ -15,6 +15,7 @@ import os
 import re
 import select
 import socket
+from struct import pack
 import threading
 from time import mktime, time, sleep
 import traceback
@@ -164,7 +165,7 @@ class JSONRPCHandler(asynchat.async_chat):
 		rv['data'] = data
 		if midstate and 'midstate' not in self.extensions:
 			h = midstate.SHA256(hdr)[:8]
-			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h))
+			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
 		return rv
 	
 	def doJSON_submitwork(self, datax):
