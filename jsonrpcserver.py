@@ -236,6 +236,9 @@ class JSONRPCHandler(asynchat.async_chat):
 	def parse_headers(self, hs):
 		hs = re.split(br'\r?\n', hs)
 		data = hs.pop(0).split(b' ')
+		if len(data) < 2:
+			self.close()
+			return
 		self.method = data[0]
 		self.path = data[1]
 		self.CL = None
