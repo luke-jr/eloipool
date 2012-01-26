@@ -164,6 +164,9 @@ class merkleMaker(threading.Thread):
 			MRD = self.merkleRoots.pop()
 			rollPrevBlk = False
 		except IndexError:
+			qsz = self.clearMerkleRoots.qsize()
+			if qsz < 0x10:
+				self.logger.warning('clearMerkleRoots running out! only %d left' % (qsz,))
 			MRD = self.clearMerkleRoots.get()
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
