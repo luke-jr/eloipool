@@ -371,18 +371,18 @@ class JSONRPCHandler:
 	
 	def push(self, data):
 		self.wbuf += data
-		self.server.register_socket_m(self.socket, EPOLL_READ | EPOLL_WRITE)
+		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
 	def handle_write(self):
 		bs = self.socket.send(self.wbuf)
 		self.wbuf = self.wbuf[bs:]
 		if not len(self.wbuf):
-			self.server.register_socket_m(self.socket, EPOLL_READ)
+			self.server.register_socket_m(self.fd, EPOLL_READ)
 	
 	recv = asynchat.async_chat.recv
 	
 	def close(self):
-		self.server.unregister_socket(self.socket)
+		self.server.unregister_socket(self.fd)
 		self.socket.close()
 	
 	def __init__(self, server, sock, addr):
@@ -392,7 +392,8 @@ class JSONRPCHandler:
 		self.socket = sock
 		self.addr = addr
 		self.reset_request()
-		server.register_socket(sock, self)
+		self.fd = sock.fileno()
+		server.register_socket(self.fd, self)
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
@@ -431,20 +432,17 @@ class JSONRPCServer:
 			pass
 		sock.bind(server_address)
 		sock.listen(100)
-		self.register_socket(sock, self)
+		self.register_socket(sock.fileno(), self)
 		self.socket = sock
 	
-	def register_socket(self, sock, o, eventmask = EPOLL_READ):
-		fd = sock.fileno()
+	def register_socket(self, fd, o, eventmask = EPOLL_READ):
 		self._epoll.register(fd, eventmask)
 		self._fd[fd] = o
 	
-	def register_socket_m(self, sock, eventmask):
-		fd = sock.fileno()
+	def register_socket_m(self, fd, eventmask):
 		self._epoll.modify(fd, eventmask)
 	
-	def unregister_socket(self, sock):
-		fd = sock.fileno()
+	def unregister_socket(self, fd):
 		self._epoll.unregister(fd)
 		del self._fd[fd]
 	
@@ -483,10 +481,14 @@ class JSONRPCServer:
 				continue
 			for (fd, e) in events:
 				o = self._fd[fd]
-				if e & EPOLL_READ:
-					tryErr(o.handle_read, Logger=self.logger)
-				if e & EPOLL_WRITE:
-					tryErr(o.handle_write, Logger=self.logger)
+				try:
+					if e & EPOLL_READ:
+						o.handle_read()
+					if e & EPOLL_WRITE:
+						o.handle_write()
+				except:
+					self.logger(traceback.format_exc())
+					tryErr(o.handle_close)
 	
 	def wakeLongpoll(self):
 		self.logger.debug("(LPILock)")
