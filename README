@@ -1,0 +1,5 @@
+Dependencies
+------------
+Python 3			http://python.org
+python-bitcoinrpc	https://github.com/jgarzik/python-bitcoinrpc
+python-base58		https://gitorious.org/bitcoin/python-base58
