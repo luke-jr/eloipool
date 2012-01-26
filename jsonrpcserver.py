@@ -443,11 +443,17 @@ class JSONRPCServer:
 		self._fd[fd] = o
 	
 	def register_socket_m(self, fd, eventmask):
-		self._epoll.modify(fd, eventmask)
+		try:
+			self._epoll.modify(fd, eventmask)
+		except IOError:
+			raise socket.error
 	
 	def unregister_socket(self, fd):
-		self._epoll.unregister(fd)
 		del self._fd[fd]
+		try:
+			self._epoll.unregister(fd)
+		except IOError:
+			raise socket.error
 	
 	def handle_read(self):
 		conn, addr = self.socket.accept()
@@ -489,6 +495,9 @@ class JSONRPCServer:
 						o.handle_read()
 					if e & EPOLL_WRITE:
 						o.handle_write()
+				except socket.error:
+					self.logger.debug(traceback.format_exc())
+					tryErr(o.handle_close)
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
