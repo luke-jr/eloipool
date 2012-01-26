@@ -19,6 +19,7 @@ class merkleMaker(threading.Thread):
 		self.daemon = True
 		self.logger = logging.getLogger('merkleMaker')
 		self.CoinbasePrefix = b''
+		self.CoinbaseAux = {}
 	
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
@@ -96,7 +97,11 @@ class merkleMaker(threading.Thread):
 			_makeCoinbase[1] = 0
 		else:
 			_makeCoinbase[1] += 1
-		return self.CoinbasePrefix + pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+		rv = self.CoinbasePrefix
+		rv += pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+		for v in self.CoinbaseAux.values():
+			rv += v
+		return rv[:100]
 	
 	def makeMerkleRoot(self, merkleTree):
 		t = merkleTree.data[0]

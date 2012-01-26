@@ -35,6 +35,9 @@ UpstreamBitcoindNode = ('127.0.0.1', 18333)  # testnet
 # Network ID for the primary blockchain
 UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 
+# Secret username allowed to use setworkaux
+#SecretUser = ""
+
 ### Settings relating to network services
 
 # Address to listen on for JSON-RPC getwork server

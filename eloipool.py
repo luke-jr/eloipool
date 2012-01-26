@@ -207,6 +207,9 @@ import interactivemode
 
 if __name__ == "__main__":
 	server = JSONRPCServer(config.JSONRPCAddress)
+	if hasattr(config, 'SecretUser'):
+		server.SecretUser = config.SecretUser
+	server.aux = MM.CoinbaseAux
 	server.getBlockHeader = getBlockHeader
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags

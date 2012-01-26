@@ -136,6 +136,8 @@ class JSONRPCHandler(asynchat.async_chat):
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
 		rv = getattr(self, method)(*tuple(data['params']))
+		if rv is None:
+			return
 		rv = {'id': data['id'], 'error': None, 'result': rv}
 		rv = json.dumps(rv)
 		rv = rv.encode('utf8')
@@ -181,6 +183,16 @@ class JSONRPCHandler(asynchat.async_chat):
 		except RejectedShare as rej:
 			self._JSONHeaders['X-Reject-Reason'] = str(rej)
 			return False
+		return True
+	
+	def doJSON_setworkaux(self, k, hexv = None):
+		if self.Username != self.server.SecretUser:
+			self.doAuthenticate()
+			return None
+		if hexv:
+			self.server.aux[k] = a2b_hex(hexv)
+		else:
+			del self.server.aux[k]
 		return True
 	
 	def handle_close(self):
@@ -347,6 +359,8 @@ class JSONRPCServer(asyncore.dispatcher):
 		self.bind(server_address)
 		self.listen(100)
 		#self.server_address = self.socket.getsockname()
+		
+		self.SecretUser = None
 		
 		self._schLock = threading.RLock()
 		self._sch = []
