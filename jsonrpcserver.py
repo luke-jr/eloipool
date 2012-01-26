@@ -18,7 +18,7 @@ from struct import pack
 import threading
 from time import mktime, time, sleep
 import traceback
-from util import RejectedShare, swap32, tryErr
+from util import RejectedShare, ScheduleDict, swap32, tryErr
 
 class WithinLongpoll(BaseException):
 	pass
@@ -124,7 +124,8 @@ class JSONRPCHandler:
 				self.LPUntrack()
 			except KeyError:
 				pass
-		self.server.rmSchedule(self._chunkedKA, self.wakeLongpoll)
+		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
+		tryErr(self.server.rmSchedule, self.wakeLongpoll, IgnoredExceptions=KeyError)
 	
 	def wakeLongpoll(self):
 		now = time()
@@ -134,7 +135,7 @@ class JSONRPCHandler:
 		
 		self.LPUntrack()
 		
-		self.server.rmSchedule(self._chunkedKA)
+		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
 		
 		rv = self.doJSON_getwork()
 		rv = {'id': 1, 'error': None, 'result': rv}
@@ -407,7 +408,7 @@ class JSONRPCServer:
 		self._fd = {}
 		
 		self._schLock = threading.RLock()
-		self._sch = []
+		self._sch = ScheduleDict()
 		
 		self._LPClients = {}
 		self._LPLock = threading.RLock()
@@ -453,25 +454,11 @@ class JSONRPCServer:
 	
 	def schedule(self, task, startTime):
 		with self._schLock:
-			IL = len(self._sch)
-			while IL and startTime < self._sch[IL-1][0]:
-				IL -= 1
-			self._sch.insert(IL, (startTime, task))
+			self._sch[task] = startTime
 	
-	def rmSchedule(self, *tasks):
-		tasks = list(tasks)
+	def rmSchedule(self, task):
 		with self._schLock:
-			i = 0
-			SL = len(self._sch)
-			while i < SL:
-				if self._sch[i][1] in tasks:
-					tasks.remove(self._sch[i][1])
-					del self._sch[i]
-					if not tasks:
-						break
-					SL -= 1
-				else:
-					i += 1
+			del self._sch[task]
 	
 	def serve_forever(self):
 		while True:
@@ -479,11 +466,11 @@ class JSONRPCServer:
 				if len(self._sch):
 					timeNow = time()
 					while True:
-						timeNext = self._sch[0][0]
+						timeNext = self._sch.nextTime()
 						if timeNow < timeNext:
 							timeout = timeNext - timeNow
 							break
-						f = self._sch.pop(0)[1]
+						f = self._sch.shift()
 						f()
 						if not len(self._sch):
 							timeout = -1
@@ -497,9 +484,9 @@ class JSONRPCServer:
 			for (fd, e) in events:
 				o = self._fd[fd]
 				if e & EPOLL_READ:
-					tryErr(self.logger, o.handle_read)
+					tryErr(o.handle_read, Logger=self.logger)
 				if e & EPOLL_WRITE:
-					tryErr(self.logger, o.handle_write)
+					tryErr(o.handle_write, Logger=self.logger)
 	
 	def wakeLongpoll(self):
 		self.logger.debug("(LPILock)")
