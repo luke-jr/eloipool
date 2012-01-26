@@ -348,7 +348,7 @@ class JSONRPCHandler:
 				else:
 					# check for a prefix of the terminator
 					termidx = tuple(map(lambda a: asynchat.find_prefix_at_end (self.ac_in_buffer, a), terminator))
-					index = min(x for x in termidx if x >= 0)
+					index = max(termidx)
 					if index:
 						if index != lb:
 							# we found a prefix, collect up to the prefix
