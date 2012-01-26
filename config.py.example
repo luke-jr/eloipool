@@ -1,0 +1,41 @@
+### Settings relating to server scaling/load
+
+# Minimum and maximum of merkle roots to keep queued
+WorkQueueSizeRegular = (50, 1000)
+
+# Minimum and maximum of BLANK merkle roots to keep queued
+# (used if we run out of populated ones, usually after a block is found)
+WorkQueueSizeLongpoll = (2000, 5000)
+
+# How long to wait between getmemorypool updates normally
+MinimumTxnUpdateWait = 5
+
+# How long to wait between retries if getmemorypool fails
+TxnUpdateRetryWait = 1
+
+# How long to sleep in idle loops (temporary!)
+IdleSleepTime = 0.1
+
+### Settings relating to reward generation
+
+# Address to generate rewards to
+TrackerAddr = 'mrsP7M31efGkQHXb7nRiWLDjfV2M8oakf2'  # testnet
+
+# Coinbaser command to control reward delegation
+CoinbaserCmd = 'let x=%d-1; echo -e "1\\n$x\\n1GEJfZRPrK2BLSSx3r6gwtuFxCUvq3QytN\\n"'
+
+### Settings relating to upstream data providers
+
+# JSON-RPC server for getmemorypool
+UpstreamURI = 'http://user:pass@localhost:18332'
+
+# Bitcoin p2p server for announcing blocks found
+UpstreamBitcoindNode = ('127.0.0.1', 18333)  # testnet
+
+# Network ID for the primary blockchain
+UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
+
+### Settings relating to network services
+
+# Address to listen on for JSON-RPC getwork server
+JSONRPCAddress = ('', 8337)
