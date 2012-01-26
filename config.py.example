@@ -46,5 +46,7 @@ GotWorkTarget = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 ### Settings relating to network services
 
-# Address to listen on for JSON-RPC getwork server
-JSONRPCAddress = ('', 8337)
+# Addresses to listen on for JSON-RPC getwork server
+JSONRPCAddresses = (
+	('', 8337),
+)

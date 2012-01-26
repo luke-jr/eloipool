@@ -240,11 +240,17 @@ from signal import signal, SIGUSR1
 signal(SIGUSR1, newBlockNotification)
 
 
-from jsonrpcserver import JSONRPCServer
+from jsonrpcserver import JSONRPCListener, JSONRPCServer
 import interactivemode
 
 if __name__ == "__main__":
-	server = JSONRPCServer(config.JSONRPCAddress)
+	server = JSONRPCServer()
+	if hasattr(config, 'JSONRPCAddress'):
+		if not hasattr(config, 'JSONRPCAddresses'):
+			config.JSONRPCAddresses = []
+		config.JSONRPCAddresses.insert(0, config.JSONRPCAddress)
+	for a in config.JSONRPCAddresses:
+		JSONRPCListener(server, a)
 	if hasattr(config, 'SecretUser'):
 		server.SecretUser = config.SecretUser
 	server.aux = MM.CoinbaseAux
