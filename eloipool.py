@@ -58,6 +58,7 @@ from util import Bits2Target
 
 workLog = {}
 networkTarget = None
+DupeShareHACK = {}
 
 server = None
 def updateBlocks():
@@ -65,6 +66,8 @@ def updateBlocks():
 		server.wakeLongpoll()
 
 def blockChanged():
+	global DupeShareHACK
+	DupeShareHACK = {}
 	global MM, networkTarget, server
 	networkTarget = Bits2Target(MM.currentBlock[1])
 	workLog.clear()
@@ -123,6 +126,7 @@ def logShare(share):
 
 def checkShare(share):
 	data = share['data']
+	data = data[:80]
 	(prevBlock, bits) = MM.currentBlock
 	sharePrevBlock = data[4:36]
 	if sharePrevBlock != prevBlock:
@@ -140,6 +144,10 @@ def checkShare(share):
 		raise RejectedShare('unknown-work')
 	MRD = MWL[shareMerkleRoot]
 	share['MRD'] = MRD
+	
+	if data in DupeShareHACK:
+		raise RejectedShare('duplicate')
+	DupeShareHACK[data] = None
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	shareTime = share['time'] = time()
