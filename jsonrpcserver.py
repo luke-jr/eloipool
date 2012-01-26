@@ -403,9 +403,11 @@ setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_min
 setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);
 
 class JSONRPCListener:
+	logger = logging.getLogger('JSONRPCListener')
+	
 	def __init__(self, server, server_address):
 		self.server = server
-		self.setup_socket(server_address)
+		tryErr(self.setup_socket, server_address, Logger=self.logger, ErrorMsg=server_address)
 	
 	def setup_socket(self, server_address):
 		sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)

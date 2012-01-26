@@ -22,11 +22,14 @@ def hash2int(h):
 def tryErr(func, *a, **kw):
 	IE = kw.pop('IgnoredExceptions', BaseException)
 	logger = kw.pop('Logger', None)
+	emsg = kw.pop('ErrorMsg', None)
 	try:
 		return func(*a, **kw)
 	except IE:
 		if logger:
-			logger.error(traceback.format_exc())
+			emsg = "%s\n" % (emsg,) if emsg else ""
+			emsg += traceback.format_exc()
+			logger.error(emsg)
 		return None
 
 class RejectedShare(ValueError):
