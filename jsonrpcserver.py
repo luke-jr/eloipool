@@ -99,7 +99,7 @@ class JSONRPCHandler:
 		totfromme = self.LPTrack()
 		with self.server._LPLock:
 			self.server._LPClients[id(self)] = self
-			self.server.schedule(self._chunkedKA, timeNow + 45)
+			self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
 			self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
 		
 		raise WithinLongpoll
@@ -107,7 +107,7 @@ class JSONRPCHandler:
 	def _chunkedKA(self):
 		# Keepalive via chunked transfer encoding
 		self.push(b"1\r\n \r\n")
-		self.server.schedule(self._chunkedKA, time() + 45)
+		self.server.schedule(self._chunkedKA, time() + 45, errHandler=self)
 	
 	def LPTrack(self):
 		myip = self.addr[0]
@@ -133,7 +133,7 @@ class JSONRPCHandler:
 	def wakeLongpoll(self):
 		now = time()
 		if now < self.waitTime:
-			self.server.schedule(self.wakeLongpoll, self.waitTime)
+			self.server.schedule(self.wakeLongpoll, self.waitTime, errHandler=self)
 			return
 		
 		self.LPUntrack()
@@ -281,7 +281,7 @@ class JSONRPCHandler:
 			pass
 	
 	def handle_error(self):
-		self.logger.error(traceback.format_exc())
+		self.logger.debug(traceback.format_exc())
 		self.handle_close()
 	
 	get_terminator = asynchat.async_chat.get_terminator
@@ -413,6 +413,7 @@ class JSONRPCServer:
 		
 		self._schLock = threading.RLock()
 		self._sch = ScheduleDict()
+		self._schEH = {}
 		
 		self._LPClients = {}
 		self._LPLock = threading.RLock()
@@ -459,13 +460,18 @@ class JSONRPCServer:
 		conn, addr = self.socket.accept()
 		h = JSONRPCHandler(self, conn, addr)
 	
-	def schedule(self, task, startTime):
+	def schedule(self, task, startTime, errHandler=None):
 		with self._schLock:
 			self._sch[task] = startTime
+			if errHandler:
+				self._schEH[id(task)] = errHandler
 	
 	def rmSchedule(self, task):
 		with self._schLock:
 			del self._sch[task]
+			k = id(task)
+			if k in self._schEH:
+				del self._schEH[k]
 	
 	def serve_forever(self):
 		while True:
@@ -478,7 +484,18 @@ class JSONRPCServer:
 							timeout = timeNext - timeNow
 							break
 						f = self._sch.shift()
-						f()
+						k = id(f)
+						EH = None
+						if k in self._schEH:
+							EH = self._schEH[k]
+							del self._schEH[k]
+						try:
+							f()
+						except socket.error:
+							if EH: tryErr(EH.handle_error)
+						except:
+							self.logger.error(traceback.format_exc())
+							if EH: tryErr(EH.handle_close)
 						if not len(self._sch):
 							timeout = -1
 							break
@@ -496,8 +513,7 @@ class JSONRPCServer:
 					if e & EPOLL_WRITE:
 						o.handle_write()
 				except socket.error:
-					self.logger.debug(traceback.format_exc())
-					tryErr(o.handle_close)
+					tryErr(o.handle_error)
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
