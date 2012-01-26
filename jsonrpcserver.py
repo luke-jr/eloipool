@@ -101,7 +101,7 @@ class JSONRPCHandler(asynchat.async_chat):
 		self.server.schedule(self._chunkedKA, time() + 45)
 	
 	def cleanupLP(self):
-		# Called when either the connection is closed, or LP is about to be sent
+		# Called when the connection is closed
 		with self.server._LPLock:
 			try:
 				del self.server._LPClients[id(self)]
@@ -116,6 +116,8 @@ class JSONRPCHandler(asynchat.async_chat):
 		if now < self.waitTime:
 			self.server.schedule(self.wakeLongpoll, self.waitTime)
 			return
+		
+		self.server.rmSchedule(self._chunkedKA)
 		
 		rv = self.doJSON_getwork()
 		rv = {'id': 1, 'error': None, 'result': rv}
@@ -450,6 +452,7 @@ class JSONRPCServer(asyncore.dispatcher):
 		self.logger.debug("(LPLock)")
 		with self._LPLock:
 			C = tuple(self._LPClients.values())
+			self._LPClients = {}
 			if not C:
 				self.logger.info('Nobody to longpoll')
 				return
