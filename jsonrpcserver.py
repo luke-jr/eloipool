@@ -97,10 +97,9 @@ class JSONRPCHandler:
 		self.waitTime = waitTime + timeNow
 		
 		totfromme = self.LPTrack()
-		with self.server._LPLock:
-			self.server._LPClients[id(self)] = self
-			self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
-			self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
+		self.server._LPClients[id(self)] = self
+		self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
+		self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
 		
 		raise WithinLongpoll
 	
@@ -121,12 +120,11 @@ class JSONRPCHandler:
 	
 	def cleanupLP(self):
 		# Called when the connection is closed
-		with self.server._LPLock:
-			try:
-				del self.server._LPClients[id(self)]
-				self.LPUntrack()
-			except KeyError:
-				pass
+		try:
+			del self.server._LPClients[id(self)]
+			self.LPUntrack()
+		except KeyError:
+			pass
 		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
 		tryErr(self.server.rmSchedule, self.wakeLongpoll, IgnoredExceptions=KeyError)
 	
@@ -427,6 +425,20 @@ class JSONRPCListener:
 		conn, addr = self.socket.accept()
 		h = server.RequestHandlerClass(server, conn, addr)
 
+class _JSONRPCLongpoll:
+	logger = logging.getLogger('JSONRPCLongpoll')
+	
+	def __init__(self, server, fd):
+		self.server = server
+		self.fd = fd
+	
+	def handle_read(self):
+		# Woken up by longpoll request
+		data = os.read(self.fd, 1)
+		if not data:
+			self.logger.error('Got EOF on socket')
+		self.logger.debug('Read wakeup on longpoll pipe')
+
 class JSONRPCServer:
 	def __init__(self, server_address=None, RequestHandlerClass=JSONRPCHandler):
 		self.logger = logging.getLogger('JSONRPCServer')
@@ -438,16 +450,16 @@ class JSONRPCServer:
 		self._epoll = select.epoll()
 		self._fd = {}
 		
-		self._schLock = threading.RLock()
 		self._sch = ScheduleDict()
 		self._schEH = {}
 		
+		self.LPRequest = False
 		self._LPClients = {}
-		self._LPLock = threading.RLock()
 		self._LPWaitTime = time() + 15
-		self._LPILock = threading.Lock()
-		self._LPI = False
-		self._LPWLock = threading.Lock()
+		(r, w) = os.pipe()
+		o = _JSONRPCLongpoll(self, r)
+		self.register_socket(r, o)
+		self._LPSock = w
 		
 		self.LPTracking = {}
 		
@@ -473,46 +485,44 @@ class JSONRPCServer:
 			raise socket.error
 	
 	def schedule(self, task, startTime, errHandler=None):
-		with self._schLock:
-			self._sch[task] = startTime
-			if errHandler:
-				self._schEH[id(task)] = errHandler
+		self._sch[task] = startTime
+		if errHandler:
+			self._schEH[id(task)] = errHandler
 	
 	def rmSchedule(self, task):
-		with self._schLock:
-			del self._sch[task]
-			k = id(task)
-			if k in self._schEH:
-				del self._schEH[k]
+		del self._sch[task]
+		k = id(task)
+		if k in self._schEH:
+			del self._schEH[k]
 	
 	def serve_forever(self):
 		while True:
-			with self._schLock:
-				if len(self._sch):
-					timeNow = time()
-					while True:
-						timeNext = self._sch.nextTime()
-						if timeNow < timeNext:
-							timeout = timeNext - timeNow
-							break
-						f = self._sch.shift()
-						k = id(f)
-						EH = None
-						if k in self._schEH:
-							EH = self._schEH[k]
-							del self._schEH[k]
-						try:
-							f()
-						except socket.error:
-							if EH: tryErr(EH.handle_error)
-						except:
-							self.logger.error(traceback.format_exc())
-							if EH: tryErr(EH.handle_close)
-						if not len(self._sch):
-							timeout = -1
-							break
-				else:
-					timeout = -1
+			if len(self._sch):
+				timeNow = time()
+				while True:
+					timeNext = self._sch.nextTime()
+					if timeNow < timeNext:
+						timeout = timeNext - timeNow
+						break
+					f = self._sch.shift()
+					k = id(f)
+					EH = None
+					if k in self._schEH:
+						EH = self._schEH[k]
+						del self._schEH[k]
+					try:
+						f()
+					except socket.error:
+						if EH: tryErr(EH.handle_error)
+					except:
+						self.logger.error(traceback.format_exc())
+						if EH: tryErr(EH.handle_close)
+					if not len(self._sch):
+						timeout = -1
+						break
+			else:
+				timeout = -1
+			
 			try:
 				events = self._epoll.poll(timeout=timeout)
 			except select.error:
@@ -529,51 +539,44 @@ class JSONRPCServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
+			if self.LPRequest == 1:
+				self._LPsch()
 	
 	def wakeLongpoll(self):
-		self.logger.debug("(LPILock)")
-		with self._LPILock:
-			if self._LPI:
-				self.logger.info('Ignoring longpoll attempt while another is waiting')
-				return
-			self._LPI = True
-		
-		th = threading.Thread(target=self._LPthread)
-		th.daemon = True
-		th.start()
+		if self.LPRequest:
+			self.logger.info('Ignoring longpoll attempt while another is waiting')
+			return
+		self.LPRequest = 1
+		os.write(self._LPSock, b'\1')  # to break out of the epoll
 	
-	def _LPthread(self):
-		self.logger.debug("(LPWLock)")
-		with self._LPWLock:
-			now = time()
-			if self._LPWaitTime > now:
-				delay = self._LPWaitTime - now
-				self.logger.info('Waiting %.3g seconds to longpoll' % (delay,))
-				sleep(delay)
-			
-			self._LPI = False
-			
+	def _LPsch(self):
+		now = time()
+		if self._LPWaitTime > now:
+			delay = self._LPWaitTime - now
+			self.logger.info('Waiting %.3g seconds to longpoll' % (delay,))
+			self.schedule(self._actualLP, self._LPWaitTime)
+			self.LPRequest = 2
+		else:
 			self._actualLP()
 	
 	def _actualLP(self):
-		self.logger.debug("(LPLock)")
-		with self._LPLock:
-			C = tuple(self._LPClients.values())
-			self._LPClients = {}
-			if not C:
-				self.logger.info('Nobody to longpoll')
-				return
-			OC = len(C)
-			self.logger.debug("%d clients to wake up..." % (OC,))
-			
-			now = time()
-			
-			for ic in C:
-				ic.wakeLongpoll()
-			
-			self._LPWaitTime = time()
-			self.logger.info('Longpoll woke up %d clients in %.3f seconds' % (OC, self._LPWaitTime - now))
-			self._LPWaitTime += 5  # TODO: make configurable: minimum time between longpolls
+		self.LPRequest = False
+		C = tuple(self._LPClients.values())
+		self._LPClients = {}
+		if not C:
+			self.logger.info('Nobody to longpoll')
+			return
+		OC = len(C)
+		self.logger.debug("%d clients to wake up..." % (OC,))
+		
+		now = time()
+		
+		for ic in C:
+			ic.wakeLongpoll()
+		
+		self._LPWaitTime = time()
+		self.logger.info('Longpoll woke up %d clients in %.3f seconds' % (OC, self._LPWaitTime - now))
+		self._LPWaitTime += 5  # TODO: make configurable: minimum time between longpolls
 	
 	def TopLPers(self, n = 0x10):
 		tmp = list(self.LPTracking.keys())
