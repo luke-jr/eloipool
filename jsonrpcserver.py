@@ -581,5 +581,5 @@ class JSONRPCServer:
 	def TopLPers(self, n = 0x10):
 		tmp = list(self.LPTracking.keys())
 		tmp.sort(key=lambda k: self.LPTracking[k])
-		for jerk in map(lambda k: (k, server.LPTracking[k]), tmp[-n:]):
+		for jerk in map(lambda k: (k, self.LPTracking[k]), tmp[-n:]):
 			print(jerk)
