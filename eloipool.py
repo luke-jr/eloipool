@@ -84,7 +84,6 @@ MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
-MM._THISISUGLY = UpstreamBitcoind
 MM.start()
 
 
