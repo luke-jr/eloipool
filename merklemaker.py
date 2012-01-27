@@ -27,8 +27,10 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (None, None)
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
+		self.LowestMerkleRoots = self.WorkQueueSizeRegular[1]
 		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
+		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
 		
 		self.nextMerkleUpdate = 0
 		global now
@@ -162,12 +164,14 @@ class merkleMaker(threading.Thread):
 		(prevBlock, bits) = self.currentBlock
 		try:
 			MRD = self.merkleRoots.pop()
+			self.LowestMerkleRoots = min(len(self.merkleRoots), self.LowestMerkleRoots)
 			rollPrevBlk = False
 		except IndexError:
 			qsz = self.clearMerkleRoots.qsize()
 			if qsz < 0x10:
 				self.logger.warning('clearMerkleRoots running out! only %d left' % (qsz,))
 			MRD = self.clearMerkleRoots.get()
+			self.LowestClearMerkleRoots = min(self.clearMerkleRoots.qsize(), self.LowestClearMerkleRoots)
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
