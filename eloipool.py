@@ -27,7 +27,7 @@ from time import time
 def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 	t = Txn.new()
 	
-	if useCoinbaser and hasattr(config, 'CoinbaserCmd'):
+	if useCoinbaser and hasattr(config, 'CoinbaserCmd') and config.CoinbaserCmd:
 		coinbased = 0
 		try:
 			cmd = config.CoinbaserCmd
