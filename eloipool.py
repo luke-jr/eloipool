@@ -88,6 +88,7 @@ MM.start()
 
 
 from binascii import b2a_hex
+from copy import deepcopy
 from struct import pack, unpack
 from time import time
 from util import RejectedShare, dblsha, hash2int
@@ -136,6 +137,8 @@ def logShare(share):
 	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
 	dbc.execute(stmt, params)
 	db.commit()
+
+RBDs = []
 
 def checkShare(share):
 	data = share['data']
@@ -194,6 +197,7 @@ def checkShare(share):
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
+		RBDs.append( deepcopy( (data, txlist) ) )
 		UpstreamBitcoind.submitBlock(data, txlist)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
