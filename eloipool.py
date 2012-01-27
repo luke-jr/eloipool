@@ -205,8 +205,7 @@ def checkShare(share):
 			coinbaseMrkl = t.data
 			coinbaseMrkl += blkhash
 			steps = MRD[1]._steps
-			coinbaseMrkl += pack('B', len(steps) + 1)
-			coinbaseMrkl += t.txid
+			coinbaseMrkl += pack('B', len(steps))
 			for step in steps:
 				coinbaseMrkl += step
 			coinbaseMrkl += b"\0\0\0\0"
