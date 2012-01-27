@@ -37,6 +37,10 @@ class JSONRPCHandler:
 		500: 'Internal Server Error',
 	}
 	
+	LPHeaders = {
+		'X-Long-Polling': None,
+	}
+	
 	logger = logging.getLogger('JSONRPCHandler')
 	
 	ac_in_buffer_size = 4096
@@ -78,6 +82,18 @@ class JSONRPCHandler:
 	def doHeader_content_length(self, value):
 		self.CL = int(value)
 	
+	def doHeader_user_agent(self, value):
+		self.reqinfo['UA'] = value
+		quirks = self.quirks
+		try:
+			if value[:9] == b'phoenix/v':
+				v = tuple(map(int, value[9:].split(b'.')))
+				if v[0] < 2 and v[1] < 8 and v[2] < 1:
+					quirks['NELH'] = None
+		except:
+			pass
+		self.quirks = quirks
+	
 	def doHeader_x_minimum_wait(self, value):
 		self.reqinfo['MinWait'] = int(value)
 	
@@ -88,17 +104,19 @@ class JSONRPCHandler:
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
 	
 	def doLongpoll(self):
-		headers = {}
-		headers['X-Long-Polling'] = None
-		self.sendReply(200, body=None, headers=headers)
-		self.push(b"1\r\n{\r\n")
-		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		timeNow = time()
+		
+		if 'NELH' not in self.quirks:
+			# [NOT No] Early Longpoll Headers
+			self.sendReply(200, body=None, headers=self.LPHeaders)
+			self.push(b"1\r\n{\r\n")
+			self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
+		
+		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		self.waitTime = waitTime + timeNow
 		
 		totfromme = self.LPTrack()
 		self.server._LPClients[id(self)] = self
-		self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
 		self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
 		
 		raise WithinLongpoll
@@ -143,8 +161,11 @@ class JSONRPCHandler:
 		rv = {'id': 1, 'error': None, 'result': rv}
 		rv = json.dumps(rv)
 		rv = rv.encode('utf8')
-		rv = rv[1:]  # strip the '{' we already sent
-		self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
+		if 'NELH' not in self.quirks:
+			rv = rv[1:]  # strip the '{' we already sent
+			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
+		else:
+			self.sendReply(200, body=rv, headers=self.LPHeaders)
 		
 		self.reset_request()
 	
@@ -253,6 +274,7 @@ class JSONRPCHandler:
 		self.extensions = []
 		self.Username = None
 		self.reqinfo = {}
+		self.quirks = {}
 		while True:
 			try:
 				data = hs.pop(0)
@@ -398,6 +420,7 @@ class JSONRPCHandler:
 		server.register_socket(self.fd, self)
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
+setattr(JSONRPCHandler, 'doHeader_user-agent', JSONRPCHandler.doHeader_user_agent);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);
 
