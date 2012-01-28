@@ -16,6 +16,9 @@ def RaiseRedFlags(reason):
 from bitcoin.node import BitcoinLink
 UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetworkId )
 
+import jsonrpc
+UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(config.UpstreamURI)
+
 
 from bitcoin.script import BitcoinScript
 from bitcoin.txn import Txn
@@ -139,6 +142,23 @@ def logShare(share):
 	db.commit()
 
 RBDs = []
+RBPs = []
+
+from bitcoin.varlen import varlenEncode
+def assembleBlock(blkhdr, txlist):
+	payload = blkhdr
+	payload += varlenEncode(len(txlist))
+	for tx in txlist:
+		payload += tx.data
+	return payload
+
+def blockSubmissionThread(payload):
+	while True:
+		try:
+			UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
+			break
+		except:
+			pass
 
 def checkShare(share):
 	data = share['data']
@@ -198,7 +218,11 @@ def checkShare(share):
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
 		RBDs.append( deepcopy( (data, txlist) ) )
-		UpstreamBitcoind.submitBlock(data, txlist)
+		payload = assembleBlock(data, txlist)
+		logfunc('Real block payload: %s' % (payload,))
+		RBPs.append(payload)
+		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
+		UpstreamBitcoind.submitBlock(payload)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
 	

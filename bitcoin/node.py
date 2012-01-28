@@ -27,7 +27,6 @@ class BitcoinLink:
 		(r, w) = os.pipe()
 		self._ping = w
 		self._pingR = r
-		self.RBPs = []
 		thr = threading.Thread(target=self._threadFunc)
 		thr.daemon = True
 		thr.start()
@@ -149,11 +148,5 @@ class BitcoinLink:
 		aPort = pack('>H', addr[1])
 		return timestamp + b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xff\xff' + aIP + aPort
 	
-	def submitBlock(self, blkhdr, txlist):
-		payload = blkhdr
-		payload += varlenEncode(len(txlist))
-		for tx in txlist:
-			payload += tx.data
-		self.logger.info('Real block payload: %s' % (payload,))
-		self.RBPs.append(payload)
+	def submitBlock(self, payload):
 		self.sendMessage('block', payload)
