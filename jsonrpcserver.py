@@ -9,6 +9,7 @@ try:
 	import midstate
 	assert midstate.SHA256(b'This is just a test, ignore it. I am making it over 64-bytes long.')[:8] == (0x755f1a94, 0x999b270c, 0xf358c014, 0xfd39caeb, 0x0dcc9ebc, 0x4694cd1a, 0x8e95678e, 0x75fac450)
 except:
+	logging.getLogger('jsonrpcserver').warning('Error importing \'midstate\' module; work will not provide midstates')
 	midstate = None
 import os
 import re
