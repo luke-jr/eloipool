@@ -20,6 +20,7 @@ class merkleMaker(threading.Thread):
 		self.logger = logging.getLogger('merkleMaker')
 		self.CoinbasePrefix = b''
 		self.CoinbaseAux = {}
+		self.overflowed = 0
 	
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
@@ -103,7 +104,13 @@ class merkleMaker(threading.Thread):
 		rv += pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
 		for v in self.CoinbaseAux.values():
 			rv += v
-		return rv[:100]
+		if len(rv) > 100:
+			t = time()
+			if self.overflowed < t - 300:
+				self.logger.warning('Overflowing coinbase data! %d bytes long' % (len(rv),))
+				self.overflowed = t
+			rv = rv[:100]
+		return rv
 	
 	def makeMerkleRoot(self, merkleTree):
 		t = merkleTree.data[0]
