@@ -264,16 +264,19 @@ class JSONRPCHandler:
 			return self.doError('uncaught error')
 	
 	def parse_headers(self, hs):
+		self.CL = None
+		self.Username = None
+		self.method = None
+		self.path = None
 		hs = re.split(br'\r?\n', hs)
 		data = hs.pop(0).split(b' ')
-		if len(data) < 2:
+		try:
+			self.method = data[0]
+			self.path = data[1]
+		except IndexError:
 			self.close()
 			return
-		self.method = data[0]
-		self.path = data[1]
-		self.CL = None
 		self.extensions = []
-		self.Username = None
 		self.reqinfo = {}
 		self.quirks = {}
 		while True:
