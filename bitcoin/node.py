@@ -1,3 +1,6 @@
+# WARNING: This is broken. It works fine on testnet, but randomly loses its connection to mainnet bitcoind and doesn't recover. This means it can LOSE REAL BLOCKS. Usually the disconnect doesn't happen until you try to submit one, either, so it's like a thief in the night. :(
+# I recommend using JSON-RPC getmemorypool to submit blocks instead.
+
 from .varlen import varlenEncode
 from collections import deque
 import logging
