@@ -20,6 +20,7 @@ class merkleMaker(threading.Thread):
 		self.logger = logging.getLogger('merkleMaker')
 		self.CoinbasePrefix = b''
 		self.CoinbaseAux = {}
+		self.isOverflowed = False
 		self.overflowed = 0
 	
 	def _prepare(self):
@@ -109,7 +110,10 @@ class merkleMaker(threading.Thread):
 			if self.overflowed < t - 300:
 				self.logger.warning('Overflowing coinbase data! %d bytes long' % (len(rv),))
 				self.overflowed = t
+				self.isOverflowed = True
 			rv = rv[:100]
+		else:
+			self.isOverflowed = False
 		return rv
 	
 	def makeMerkleRoot(self, merkleTree):
