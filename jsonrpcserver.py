@@ -259,6 +259,7 @@ class JSONRPCHandler:
 	
 	def handle_close(self):
 		self.cleanupLP()
+		self.wbuf = None
 		self.close()
 	
 	def handle_request(self):
@@ -423,17 +424,24 @@ class JSONRPCHandler:
 		bs = self.socket.send(self.wbuf)
 		self.wbuf = self.wbuf[bs:]
 		if not len(self.wbuf):
+			if self.closeme:
+				self.close()
+				return
 			self.server.register_socket_m(self.fd, EPOLL_READ)
 	
 	recv = asynchat.async_chat.recv
 	
 	def close(self):
+		if self.wbuf:
+			self.closeme = True
+			return
 		self.server.unregister_socket(self.fd)
 		self.socket.close()
 	
 	def __init__(self, server, sock, addr):
 		self.ac_in_buffer = b''
 		self.wbuf = b''
+		self.closeme = False
 		self.server = server
 		self.socket = sock
 		self.addr = addr
