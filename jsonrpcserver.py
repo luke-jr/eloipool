@@ -127,7 +127,7 @@ class JSONRPCHandler:
 			# [NOT No] Early Longpoll Headers
 			self.sendReply(200, body=None, headers=self.LPHeaders)
 			self.push(b"1\r\n{\r\n")
-			self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
+			self._LPTask = self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
 		
 		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		self.waitTime = waitTime + timeNow
@@ -141,7 +141,7 @@ class JSONRPCHandler:
 	def _chunkedKA(self):
 		# Keepalive via chunked transfer encoding
 		self.push(b"1\r\n \r\n")
-		self.server.schedule(self._chunkedKA, time() + 45, errHandler=self)
+		self._LPTask = self.server.schedule(self._LPTask, time() + 45, errHandler=self)
 	
 	def LPTrack(self):
 		myip = self.addr[0]
@@ -158,20 +158,22 @@ class JSONRPCHandler:
 		try:
 			del self.server._LPClients[id(self)]
 			self.LPUntrack()
+			if self._LPTask:
+				self.server.rmSchedule(self._LPTask)
+			self._LPTask = None
 		except KeyError:
 			pass
-		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
-		tryErr(self.server.rmSchedule, self.wakeLongpoll, IgnoredExceptions=KeyError)
 	
 	def wakeLongpoll(self):
+		if self._LPTask:
+			tryErr(self.server.rmSchedule, self._LPTask, IgnoredExceptions=KeyError)
+			self._LPTask = None
 		now = time()
 		if now < self.waitTime:
-			self.server.schedule(self.wakeLongpoll, self.waitTime, errHandler=self)
+			self._LPTask = self.server.schedule(self.wakeLongpoll, self.waitTime, errHandler=self)
 			return
 		
 		self.LPUntrack()
-		
-		tryErr(self.server.rmSchedule, self._chunkedKA, IgnoredExceptions=KeyError)
 		
 		rv = self.doJSON_getwork()
 		rv['submitold'] = True
@@ -435,6 +437,7 @@ class JSONRPCHandler:
 		self.server = server
 		self.socket = sock
 		self.addr = addr
+		self._LPTask = None
 		self.reset_request()
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
@@ -531,6 +534,7 @@ class JSONRPCServer:
 		self._sch[task] = startTime
 		if errHandler:
 			self._schEH[id(task)] = errHandler
+		return task
 	
 	def rmSchedule(self, task):
 		del self._sch[task]
