@@ -425,6 +425,9 @@ class JSONRPCHandler:
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
 	def handle_write(self):
+		if self.wbuf is None:
+			# Socket was just closed by remote peer
+			return
 		bs = self.socket.send(self.wbuf)
 		self.wbuf = self.wbuf[bs:]
 		if not len(self.wbuf):
