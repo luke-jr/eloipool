@@ -60,7 +60,7 @@ class ScheduleDict:
 		self._build_heap()
 	
 	def _build_heap(self):
-		newheap = list((v[0], k, v[1]) for k, v in self._dict.values())
+		newheap = list((v[0], k, v[1]) for k, v in self._dict.items())
 		heapq.heapify(newheap)
 		self._heap = newheap
 	
