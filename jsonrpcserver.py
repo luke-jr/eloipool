@@ -128,6 +128,8 @@ class JSONRPCHandler:
 			self.sendReply(200, body=None, headers=self.LPHeaders)
 			self.push(b"1\r\n{\r\n")
 			self._LPTask = self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
+		else:
+			self._LPTask = True
 		
 		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		self.waitTime = waitTime + timeNow
@@ -157,7 +159,8 @@ class JSONRPCHandler:
 		# Called when the connection is closed
 		if self._LPTask is None:
 			return
-		self.server.rmSchedule(self._LPTask)
+		if not self._LPTask is True:
+			self.server.rmSchedule(self._LPTask)
 		self._LPTask = None
 		try:
 			del self.server._LPClients[id(self)]
