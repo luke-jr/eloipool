@@ -338,6 +338,10 @@ class JSONRPCHandler:
 			self.handle_error()
 			return
 		
+		if self.closeme:
+			# All input is ignored from sockets we have "closed"
+			return
+		
 		if isinstance(data, str) and self.use_encoding:
 			data = bytes(str, self.encoding)
 		self.ac_in_buffer = self.ac_in_buffer + data
