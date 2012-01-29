@@ -155,14 +155,15 @@ class JSONRPCHandler:
 	
 	def cleanupLP(self):
 		# Called when the connection is closed
+		if self._LPTask is None:
+			return
+		self.server.rmSchedule(self._LPTask)
+		self._LPTask = None
 		try:
 			del self.server._LPClients[id(self)]
-			self.LPUntrack()
-			if self._LPTask:
-				self.server.rmSchedule(self._LPTask)
-			self._LPTask = None
 		except KeyError:
-			pass
+			return
+		self.LPUntrack()
 	
 	def wakeLongpoll(self):
 		if self._LPTask:
