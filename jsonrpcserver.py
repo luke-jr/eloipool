@@ -314,9 +314,16 @@ class JSONRPCHandler:
 	
 	def found_terminator(self):
 		if self.reading_headers:
-			self.reading_headers = False
-			self.parse_headers(b"".join(self.incoming))
+			inbuf = b"".join(self.incoming)
 			self.incoming = []
+			m = re.match(br'^[\r\n]+', inbuf)
+			if m:
+				inbuf = inbuf[len(m.group(0)):]
+			if not inbuf:
+				return
+			
+			self.reading_headers = False
+			self.parse_headers(inbuf)
 			if self.CL:
 				self.set_terminator(self.CL)
 				return
