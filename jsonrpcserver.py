@@ -199,16 +199,20 @@ class JSONRPCHandler:
 		data = data.decode('utf8')
 		try:
 			data = json.loads(data)
+			method = 'doJSON_' + str(data['method']).lower()
 		except ValueError:
 			return self.doError(r'Parse error')
-		method = 'doJSON_' + str(data['method']).lower()
+		except TypeError:
+			return self.doError(r'Bad call')
 		if not hasattr(self, method):
 			return self.doError(r'Procedure not found')
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
+		params = data.get('params', ())
 		try:
-			rv = getattr(self, method)(*tuple(data.get('params', ())))
+			rv = getattr(self, method)(*tuple(data['params']))
 		except Exception as e:
+			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
 			return self.doError(r'Service error: %s' % (e,))
 		if rv is None:
 			# response was already sent (eg, authentication request)
