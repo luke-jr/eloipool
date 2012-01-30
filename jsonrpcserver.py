@@ -77,6 +77,8 @@ class JSONRPCHandler:
 			headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
 			headers.setdefault('X-Roll-NTime', 'expire=120')
+		elif body[0] == 123:  # b'{'
+			headers.setdefault('Content-Type', 'application/json')
 		for k, v in headers.items():
 			if v is None: continue
 			buf += "%s: %s\r\n" % (k, v)
@@ -85,7 +87,9 @@ class JSONRPCHandler:
 		buf += body
 		self.push(buf)
 	
-	def doError(self, reason = ''):
+	def doError(self, reason = '', code = 100):
+		reason = json.dumps(reason)
+		reason = r'{"result":null,"id":null,"error":{"name":"JSONRPCError","code":%d,"message":%s}}' % (code, reason)
 		return self.sendReply(500, reason.encode('utf8'))
 	
 	def doHeader_authorization(self, value):
@@ -193,17 +197,27 @@ class JSONRPCHandler:
 	def doJSON(self, data):
 		# TODO: handle JSON errors
 		data = data.decode('utf8')
-		data = json.loads(data)
+		try:
+			data = json.loads(data)
+		except ValueError:
+			return self.doError(r'Parse error')
 		method = 'doJSON_' + str(data['method']).lower()
 		if not hasattr(self, method):
-			return self.doError('No such method')
+			return self.doError(r'Procedure not found')
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
-		rv = getattr(self, method)(*tuple(data.get('params', ())))
+		try:
+			rv = getattr(self, method)(*tuple(data.get('params', ())))
+		except Exception as e:
+			return self.doError(r'Service error: %s' % (e,))
 		if rv is None:
+			# response was already sent (eg, authentication request)
 			return
 		rv = {'id': data['id'], 'error': None, 'result': rv}
-		rv = json.dumps(rv)
+		try:
+			rv = json.dumps(rv)
+		except:
+			return self.doError(r'Error encoding reply in JSON')
 		rv = rv.encode('utf8')
 		return self.sendReply(200, rv, headers=self._JSONHeaders)
 	
