@@ -123,13 +123,14 @@ class JSONRPCHandler:
 	def doLongpoll(self):
 		timeNow = time()
 		
+		self._LP = True
 		if 'NELH' not in self.quirks:
 			# [NOT No] Early Longpoll Headers
 			self.sendReply(200, body=None, headers=self.LPHeaders)
 			self.push(b"1\r\n{\r\n")
-			self._LPTask = self.server.schedule(self._chunkedKA, timeNow + 45, errHandler=self)
+			self.changeTask(self._chunkedKA, timeNow + 45)
 		else:
-			self._LPTask = True
+			self.changeTask(None)
 		
 		waitTime = self.reqinfo.get('MinWait', 15)  # TODO: make default configurable
 		self.waitTime = waitTime + timeNow
@@ -143,7 +144,7 @@ class JSONRPCHandler:
 	def _chunkedKA(self):
 		# Keepalive via chunked transfer encoding
 		self.push(b"1\r\n \r\n")
-		self._LPTask = self.server.schedule(self._LPTask, time() + 45, errHandler=self)
+		self.changeTask(self._chunkedKA, time() + 45)
 	
 	def LPTrack(self):
 		myip = self.addr[0]
@@ -157,25 +158,22 @@ class JSONRPCHandler:
 	
 	def cleanupLP(self):
 		# Called when the connection is closed
-		if self._LPTask is None:
+		if not self._LP:
 			return
-		if not self._LPTask is True:
-			self.server.rmSchedule(self._LPTask)
-		self._LPTask = None
+		self.changeTask(None)
 		try:
 			del self.server._LPClients[id(self)]
 		except KeyError:
-			return
+			pass
 		self.LPUntrack()
 	
 	def wakeLongpoll(self):
-		if self._LPTask:
-			tryErr(self.server.rmSchedule, self._LPTask, IgnoredExceptions=KeyError)
-			self._LPTask = None
 		now = time()
 		if now < self.waitTime:
-			self._LPTask = self.server.schedule(self.wakeLongpoll, self.waitTime, errHandler=self)
+			self.changeTask(self.wakeLongpoll, self.waitTime)
 			return
+		else:
+			self.changeTask(None)
 		
 		self.LPUntrack()
 		
@@ -263,6 +261,7 @@ class JSONRPCHandler:
 	
 	def handle_close(self):
 		self.cleanupLP()
+		self.changeTask(None)
 		self.wbuf = None
 		self.close()
 	
@@ -427,6 +426,8 @@ class JSONRPCHandler:
 		self.incoming = []
 		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
 		self.reading_headers = True
+		self._LP = False
+		self.changeTask(self.handle_timeout, time() + 15)
 	
 	def collect_incoming_data(self, data):
 		asynchat.async_chat._collect_incoming_data(self, data)
@@ -434,6 +435,9 @@ class JSONRPCHandler:
 	def push(self, data):
 		self.wbuf += data
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
+	
+	def handle_timeout(self):
+		self.close()
 	
 	def handle_write(self):
 		if self.wbuf is None:
@@ -456,6 +460,11 @@ class JSONRPCHandler:
 		self.server.unregister_socket(self.fd)
 		self.socket.close()
 	
+	def changeTask(self, f, t = None):
+		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
+		if f:
+			self._Task = self.server.schedule(f, t, errHandler=self)
+	
 	def __init__(self, server, sock, addr):
 		self.ac_in_buffer = b''
 		self.wbuf = b''
@@ -463,10 +472,11 @@ class JSONRPCHandler:
 		self.server = server
 		self.socket = sock
 		self.addr = addr
-		self._LPTask = None
+		self._Task = None
 		self.reset_request()
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
+		self.changeTask(self.handle_timeout, time() + 15)
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_user-agent', JSONRPCHandler.doHeader_user_agent);
