@@ -208,7 +208,7 @@ class JSONRPCHandler:
 			return self.doError(r'Procedure not found')
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
-		params = data.get('params', ())
+		params = data.setdefault('params', ())
 		try:
 			rv = getattr(self, method)(*tuple(data['params']))
 		except Exception as e:
