@@ -77,7 +77,7 @@ class JSONRPCHandler:
 			headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
 			headers.setdefault('X-Roll-NTime', 'expire=120')
-		elif body[0] == 123:  # b'{'
+		elif body and body[0] == 123:  # b'{'
 			headers.setdefault('Content-Type', 'application/json')
 		for k, v in headers.items():
 			if v is None: continue
