@@ -524,6 +524,10 @@ class JSONRPCListener:
 		server = self.server
 		conn, addr = self.socket.accept()
 		h = server.RequestHandlerClass(server, conn, addr)
+	
+	def handle_error(self):
+		# Ignore errors... like socket closing on the queue
+		pass
 
 class _JSONRPCLongpoll:
 	logger = logging.getLogger('JSONRPCLongpoll')
