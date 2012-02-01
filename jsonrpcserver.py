@@ -506,6 +506,7 @@ class JSONRPCListener:
 	
 	def __init__(self, server, server_address):
 		self.server = server
+		self.server_address = server_address
 		tryErr(self.setup_socket, server_address, Logger=self.logger, ErrorMsg=server_address)
 	
 	def setup_socket(self, server_address):
