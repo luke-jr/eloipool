@@ -602,6 +602,8 @@ class JSONRPCServer:
 	
 	def serve_forever(self):
 		while True:
+			if self.LPRequest == 1:
+				self._LPsch()
 			if len(self._sch):
 				timeNow = time()
 				while True:
@@ -630,8 +632,10 @@ class JSONRPCServer:
 			
 			try:
 				events = self._epoll.poll(timeout=timeout)
-			except select.error:
+			except (IOError, select.error):
 				continue
+			except:
+				self.logger.error(traceback.format_exc())
 			for (fd, e) in events:
 				o = self._fd[fd]
 				try:
@@ -644,8 +648,6 @@ class JSONRPCServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
-			if self.LPRequest == 1:
-				self._LPsch()
 	
 	def wakeLongpoll(self):
 		if self.LPRequest:
