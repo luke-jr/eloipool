@@ -47,6 +47,8 @@ GotWorkTarget = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 ### Settings relating to network services
 
 # Addresses to listen on for JSON-RPC getwork server
+# Note that Eloipool only supports IPv6 sockets, and if you want to bind to an
+# IPv4 address you will need to prepend it with ::ffff: eg ::ffff:192.168.1.2
 JSONRPCAddresses = (
 	('', 8337),
 )
