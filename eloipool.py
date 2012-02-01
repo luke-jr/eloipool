@@ -277,6 +277,7 @@ def receiveShare(share):
 	# TODO
 
 def newBlockNotification(signum, frame):
+	logging.getLogger('newBlockNotification').info('Received new block notification')
 	MM.updateMerkleTree()
 	# TODO: Force RESPOND TO LONGPOLLS?
 	pass
