@@ -113,6 +113,7 @@ from time import time
 from util import RejectedShare, dblsha, hash2int
 import jsonrpc
 import threading
+import traceback
 
 gotwork = None
 if hasattr(config, 'GotWorkURI'):
@@ -122,7 +123,7 @@ def submitGotwork(info):
 	try:
 		gotwork.gotwork(info)
 	except:
-		checkShare.logger.warning('Failed to submit gotwork')
+		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
 db = None
 if hasattr(config, 'DbOptions'):
