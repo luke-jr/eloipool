@@ -294,8 +294,9 @@ if __name__ == "__main__":
 		if not hasattr(config, 'JSONRPCAddresses'):
 			config.JSONRPCAddresses = []
 		config.JSONRPCAddresses.insert(0, config.JSONRPCAddress)
+	LS = []
 	for a in config.JSONRPCAddresses:
-		JSONRPCListener(server, a)
+		LS.append(JSONRPCListener(server, a))
 	if hasattr(config, 'SecretUser'):
 		server.SecretUser = config.SecretUser
 	server.aux = MM.CoinbaseAux
