@@ -395,6 +395,8 @@ if __name__ == "__main__":
 	bcnode_thr.daemon = True
 	bcnode_thr.start()
 	LSbc = []
+	if not hasattr(config, 'BitcoinNodeAddresses'):
+		config.BitcoinNodeAddresses = ()
 	for a in config.BitcoinNodeAddresses:
 		LSbc.append(NetworkListener(bcnode, a))
 	
