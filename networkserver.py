@@ -16,6 +16,7 @@
 
 import asynchat
 import logging
+import os
 import select
 import socket
 from time import time
@@ -128,8 +129,22 @@ class NetworkListener:
 		# Ignore errors... like socket closing on the queue
 		pass
 
+class _Waker:
+	def __init__(self, server, fd):
+		self.server = server
+		self.fd = fd
+		self.logger = logging.getLogger('Waker for %s' % (server.__class__.__name__,))
+	
+	def handle_read(self):
+		data = os.read(self.fd, 1)
+		if not data:
+			self.logger.error('Got EOF on socket')
+		self.logger.debug('Read wakeup')
+
 class AsyncSocketServer:
 	logger = logging.getLogger('SocketServer')
+	
+	waker = False
 	
 	def __init__(self, RequestHandlerClass):
 		self.RequestHandlerClass = RequestHandlerClass
@@ -139,6 +154,12 @@ class AsyncSocketServer:
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
+		
+		if self.waker:
+			(r, w) = os.pipe()
+			o = _Waker(self, r)
+			self.register_socket(r, o)
+			self.waker = w
 	
 	def register_socket(self, fd, o, eventmask = EPOLL_READ):
 		self._epoll.register(fd, eventmask)
@@ -168,6 +189,14 @@ class AsyncSocketServer:
 		k = id(task)
 		if k in self._schEH:
 			del self._schEH[k]
+	
+	def pre_schedule(self):
+		pass
+	
+	def wakeup(self):
+		if not self.waker:
+			raise NotImplementedError('Class `%s\' did not enable waker' % (self.__class__.__name__))
+		os.write(self.waker, b'\1')  # to break out of the epoll
 	
 	def serve_forever(self):
 		while True:

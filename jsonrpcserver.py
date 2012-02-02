@@ -436,22 +436,10 @@ setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_
 
 JSONRPCListener = networkserver.NetworkListener
 
-class _JSONRPCLongpoll:
-	logger = logging.getLogger('JSONRPCLongpoll')
-	
-	def __init__(self, server, fd):
-		self.server = server
-		self.fd = fd
-	
-	def handle_read(self):
-		# Woken up by longpoll request
-		data = os.read(self.fd, 1)
-		if not data:
-			self.logger.error('Got EOF on socket')
-		self.logger.debug('Read wakeup on longpoll pipe')
-
 class JSONRPCServer(networkserver.AsyncSocketServer):
 	logger = logging.getLogger('JSONRPCServer')
+	
+	waker = True
 	
 	def __init__(self, *a, **ka):
 		ka.setdefault('RequestHandlerClass', JSONRPCHandler)
@@ -462,10 +450,6 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		self.LPRequest = False
 		self._LPClients = {}
 		self._LPWaitTime = time() + 15
-		(r, w) = os.pipe()
-		o = _JSONRPCLongpoll(self, r)
-		self.register_socket(r, o)
-		self._LPSock = w
 		
 		self.LPTracking = {}
 	
@@ -478,7 +462,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 			self.logger.info('Ignoring longpoll attempt while another is waiting')
 			return
 		self.LPRequest = 1
-		os.write(self._LPSock, b'\1')  # to break out of the epoll
+		self.wakeup()
 	
 	def _LPsch(self):
 		now = time()
