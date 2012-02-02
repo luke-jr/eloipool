@@ -17,6 +17,9 @@
 
 import config
 
+if not hasattr(config, 'ServerName'):
+	config.ServerName = 'Unnamed Eloipool'
+
 
 import logging
 
