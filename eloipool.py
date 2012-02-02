@@ -296,10 +296,9 @@ import traceback
 
 SAVE_STATE_FILENAME = 'eloipool.worklog'
 
-def exit():
-	logger = logging.getLogger('exit')
+def stopServers():
+	logger = logging.getLogger('stopServers')
 	
-	# First, shutdown servers...
 	logger.info('Stopping servers...')
 	global server
 	server.keepgoing = False
@@ -312,8 +311,14 @@ def exit():
 			break
 		sleep(0.01)
 	
+	for fd in server._fd.keys():
+		os.close(fd)
+
+def saveState():
+	logger = logging.getLogger('saveState')
+	
 	# Then, save data needed to resume work
-	logger.info('Saving work state...')
+	logger.info('Saving work state to \'%s\'...' % (SAVE_STATE_FILENAME,))
 	i = 0
 	while True:
 		try:
@@ -328,11 +333,22 @@ def exit():
 					os.unlink(SAVE_STATE_FILENAME)
 				except:
 					logger.error(('Failed to unlink \'%s\'; resume may have trouble\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
-	
-	# Finally, exit for real via SIGTERM
-	logger.info('Goodbye...')
+
+def exit():
+	stopServers()
+	saveState()
+	logging.getLogger('exit').info('Goodbye...')
 	os.kill(os.getpid(), signal.SIGTERM)
 	sys.exit(0)
+
+def restart():
+	stopServers()
+	saveState()
+	logging.getLogger('restart').info('Restarting...')
+	try:
+		os.execv(sys.argv[0], sys.argv)
+	except:
+		logging.getLogger('restart').error('Failed to exec\n' + traceback.format_exc())
 
 def restoreState():
 	if not os.path.exists(SAVE_STATE_FILENAME):
@@ -341,7 +357,7 @@ def restoreState():
 	global workLog, DupeShareHACK
 	
 	logger = logging.getLogger('restoreState')
-	logger.info('Restoring saved state from \'%s\'' % (SAVE_STATE_FILENAME,))
+	logger.info('Restoring saved state from \'%s\' (%d bytes)' % (SAVE_STATE_FILENAME, os.stat(SAVE_STATE_FILENAME).st_size))
 	try:
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
 			data = pickle.load(f)
