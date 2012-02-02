@@ -29,8 +29,9 @@ def RaiseRedFlags(reason):
 	return reason
 
 
-from bitcoin.node import BitcoinLink
-UpstreamBitcoind = BitcoinLink( config.UpstreamBitcoindNode, config.UpstreamNetworkId )
+from bitcoin.node import BitcoinLink, BitcoinNode
+bcnode = BitcoinNode(config.UpstreamNetworkId)
+bcnode.userAgent += b'Eloipool:0.1/'
 
 import jsonrpc
 UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(config.UpstreamURI)
@@ -239,7 +240,7 @@ def checkShare(share):
 		logfunc('Real block payload: %s' % (payload,))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
-		UpstreamBitcoind.submitBlock(payload)
+		bcnode.submitBlock(payload)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
 	
@@ -288,8 +289,19 @@ signal(SIGUSR1, newBlockNotification)
 
 from jsonrpcserver import JSONRPCListener, JSONRPCServer
 import interactivemode
+from networkserver import NetworkListener
+import threading
 
 if __name__ == "__main__":
+	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
+	bcnode_thr.daemon = True
+	bcnode_thr.start()
+	LSbc = []
+	for a in config.BitcoinNodeAddresses:
+		LSbc.append(NetworkListener(bcnode, a))
+	
+	# TODO: connect to config.UpstreamBitcoindNode
+	
 	server = JSONRPCServer()
 	if hasattr(config, 'JSONRPCAddress'):
 		if not hasattr(config, 'JSONRPCAddresses'):
