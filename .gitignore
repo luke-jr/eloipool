@@ -7,3 +7,4 @@ jsonrpc
 *.patch
 .*.kate-swp
 base58.py
+midstate.so
