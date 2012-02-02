@@ -550,6 +550,9 @@ class JSONRPCServer:
 		
 		self.RequestHandlerClass = RequestHandlerClass
 		
+		self.running = False
+		self.keepgoing = True
+		
 		self.SecretUser = None
 		
 		self._epoll = select.epoll()
@@ -602,7 +605,8 @@ class JSONRPCServer:
 			del self._schEH[k]
 	
 	def serve_forever(self):
-		while True:
+		self.running = True
+		while self.keepgoing:
 			if self.LPRequest == 1:
 				self._LPsch()
 			if len(self._sch):
@@ -649,6 +653,7 @@ class JSONRPCServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_close)
+		self.running = False
 	
 	def wakeLongpoll(self):
 		if self.LPRequest:
