@@ -321,8 +321,9 @@ def stopServers():
 			break
 		sleep(0.01)
 	
-	for fd in server._fd.keys():
-		os.close(fd)
+	for s in servers:
+		for fd in s._fd.keys():
+			os.close(fd)
 
 def saveState():
 	logger = logging.getLogger('saveState')
