@@ -14,158 +14,153 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# WARNING: This is broken. It works fine on testnet, but randomly loses its connection to mainnet bitcoind and doesn't recover. This means it can LOSE REAL BLOCKS. Usually the disconnect doesn't happen until you try to submit one, either, so it's like a thief in the night. :(
-# I recommend using JSON-RPC getmemorypool to submit blocks instead.
-
 from .varlen import varlenEncode
+import asynchat
 from collections import deque
 import logging
-import os
-import select
+import networkserver
+import re
 import socket
 from struct import pack, unpack
-import threading
-from time import sleep, time
-import traceback
+from time import time
 from util import dblsha, tryErr
 
-EPOLL_READ = select.EPOLLIN | select.EPOLLPRI | select.EPOLLERR | select.EPOLLHUP
-EPOLL_WRITE = select.EPOLLOUT
+MAX_PACKET_PAYLOAD = 0x200000
 
-MAGIC_CONNECT = b'We are now connected! Yay! :)'
-MAGIC_CONFIRM = b'I have received your data, ty'
+def makeNetAddr(addr):
+	timestamp = pack('<L', int(time()))
+	aIP = pack('>BBBB', *map(int, addr[0].split('.')))
+	aPort = pack('>H', addr[1])
+	return timestamp + b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xff\xff' + aIP + aPort
 
-class BitcoinLink:
+class BitcoinLink(networkserver.SocketHandler):
 	logger = logging.getLogger('BitcoinLink')
 	
-	def __init__(self, dest, netid):
-		self.netid = netid
-		self.dest = dest
-		self._mq = deque()
-		self._pm = []
-		(r, w) = os.pipe()
-		self._ping = w
-		self._pingR = r
-		thr = threading.Thread(target=self._threadFunc)
-		thr.daemon = True
-		thr.start()
-	
-	def _threadFunc(self):
-		logger = self.logger
-		pm = self._pm
-		
-		epoll = select.epoll()
-		self._epoll = epoll
-		epoll.register(self._pingR, EPOLL_READ)
-		
-		sck = None
-		fd = None
-		
-		while True:
+	def __init__(self, *a, **ka):
+		dest = ka.pop('dest', None)
+		if dest:
+			# Initiate outbound connection
 			try:
-				sck.close()
-				epoll.unregister(fd)
+				if ':' not in dest[0]:
+					dest = ('::ffff:' + dest[0],) + tuple(x for x in dest[1:])
 			except:
 				pass
-			
-			try:
-				sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				fd = sck.fileno()
-				sck.connect(self.dest)
-				self.sock = sck
-				epoll.register(fd, EPOLL_READ | EPOLL_WRITE)
-			except:
-				emsg = "Failed to connect to bitcoin node"
-				asap = len(self._mq)
-				if asap:
-					emsg += " with pending messages"
-				emsg += "\n"
-				emsg += traceback.format_exc()
-				logger.critical(emsg)
-				sleep(0.5 if asap else 5)
-				continue
-			
-			try:
-				self._mainloop()
-				logger.debug("Bitcoin node got disconnected")
-			except:
-				logger.debug("Error in bitcoin node main loop:\n" + traceback.format_exc())
+			sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+			sock.connect(dest)
+			ka['sock'] = sock
+			ka['addr'] = dest
+		super().__init__(*a, **ka)
+		self.dest = dest
+		self.sentVersion = False
+		self.changeTask(None)  # FIXME: TEMPORARY
+		if dest:
+			self.pushVersion()
 	
-	def _mainloop(self):
-		logger = self.logger
-		epoll = self._epoll
-		pm = self._pm
-		sck = self.sock
-		fd = sck.fileno()
-		
-		destAddr = self.makeNetAddr(sck.getpeername())
-		payload = b'\0\0\1\0\0\0\0\0\0\0\0\0' + pack('<L', int(time())) + destAddr
-		wbuf = self.makeMessage('version', payload)
-		wbuf += self.makeMessage('checkorder', MAGIC_CONNECT)
-		rbuf = b''
-		for m in pm:
-			wbuf += m
-		pc = False
-		
-		while True:
-			events = epoll.poll()
-			for (efd, e) in events:
-				if efd != fd:
-					# wakeup pipe
-					os.read(self._pingR, 1)
-					continue
-				# bitcoin p2p
-				if e & EPOLL_READ:
-					nrb = sck.recv(1024, socket.MSG_DONTWAIT)
-					if not nrb:
-						return
-					idx = 0
-					if MAGIC_CONFIRM in rbuf + nrb:
-						# Confirmation of msg receipt ;)
-						n = len(pm)
-						pm[:] = ()
-						pc = False
-						idx = nrb.find(MAGIC_CONFIRM) + 1
-						logger.debug("Confirmed %d bitcoin node messages received" % (n,))
-					elif MAGIC_CONNECT in rbuf + nrb:
-						idx = nrb.find(MAGIC_CONNECT) + 1
-						logger.debug("Connected to bitcoin node")
-					rbuf = nrb[idx:]
-				if e & EPOLL_WRITE:
-					n = sck.send(wbuf, socket.MSG_DONTWAIT)
-					wbuf = wbuf[n:]
-					if not wbuf:
-						epoll.modify(fd, EPOLL_READ)
-			if not pc:
-				while len(self._mq):
-					m = self._mq.popleft()
-					pm.append(m)
-					wbuf += m
-				if pm:
-					epoll.modify(fd, EPOLL_READ | EPOLL_WRITE)
-					# FIXME: this only works if IP txns are disabled!
-					wbuf += self.makeMessage('checkorder', MAGIC_CONFIRM)
-					pc = True
-					logger.debug("Attempting to send %d messages (%d bytes) to bitcoin node" % (len(pm), len(wbuf)))
+	def handle_readbuf(self):
+		netid = self.server.netid
+		while self.ac_in_buffer:
+			if self.ac_in_buffer[:4] != netid:
+				p = self.ac_in_buffer.find(netid)
+				if p == -1:
+					p = asynchat.find_prefix_at_end(self.ac_in_buffer, netid)
+					if p:
+						self.ac_in_buffer = self.ac_in_buffer[-p:]
+					else:
+						self.ac_in_buffer = b''
+					break
+				self.ac_in_buffer = self.ac_in_buffer[p:]
+			
+			cmd = self.ac_in_buffer[4:0x10].rstrip(b'\0').decode('utf8')
+			payloadLen = unpack('<L', self.ac_in_buffer[0x10:0x14])[0]
+			if payloadLen > MAX_PACKET_PAYLOAD:
+				raise RuntimeError('Packet payload is too long (%d bytes)' % (payloadLen,))
+			payloadEnd = payloadLen + 0x18
+			if cmd == 'version' and time() <= 1329696000:  # TEMPORARY HACK
+				payloadEnd -= 4
+			if len(self.ac_in_buffer) < payloadEnd:
+				# Don't have the whole packet yet
+				break
+			
+			method = 'doCmd_' + cmd
+			if cmd == 'version' and time() <= 1329696000:  # TEMPORARY HACK
+				self.ac_in_buffer = self.ac_in_buffer[:0x14] + dblsha(self.ac_in_buffer[0x14:payloadEnd])[:4] + self.ac_in_buffer[0x14:]
+			cksum = self.ac_in_buffer[0x14:0x18]
+			payload = self.ac_in_buffer[0x18:payloadEnd]
+			self.ac_in_buffer = self.ac_in_buffer[payloadEnd:]
+			
+			if dblsha(payload)[:4] != cksum:
+				self.logger.debug('Wrong checksum on `%s\' message; ignoring' % (cmd,))
+				return
+			
+			if hasattr(self, method):
+				getattr(self, method)(payload)
 	
-	def makeMessage(self, cmd, payload, cksum = True):
+	def pushMessage(self, *a, **ka):
+		self.push(self.server.makeMessage(*a, **ka))
+	
+	def makeVersion(self):
+		r = pack('<lQq26s26sQ',
+			60000,              # version
+			0,                  # services bitfield
+			int(time()),        # timestamp
+			b'',                # FIXME: other-side address
+			b'',                # FIXME: my-side address
+			self.server.nonce,  # nonce
+		)
+		UA = self.server.userAgent
+		r += varlenEncode(len(UA)) + UA
+		r += b'\0\0\0\0'         # start_height
+		return r
+	
+	def pushVersion(self):
+		if self.sentVersion:
+			return
+		self.pushMessage('version', self.makeVersion(), 1329696000 <= time())
+		self.sentVersion = True
+	
+	def doCmd_version(self, payload):
+		# FIXME: check for loopbacks
+		self.pushVersion()
+		# FIXME: don't send verack to ancient clients
+		self.pushMessage('verack')
+
+class BitcoinNode(networkserver.AsyncSocketServer):
+	logger = logging.getLogger('BitcoinNode')
+	
+	waker = True
+	
+	def __init__(self, netid, *a, **ka):
+		ka.setdefault('RequestHandlerClass', BitcoinLink)
+		super().__init__(*a, **ka)
+		self.netid = netid
+		self.userAgent = b'/BitcoinNode:0.1/'
+		self.nonce = 0  # FIXME
+		self._om = deque()
+	
+	def pre_schedule(self):
+		OM = self._om
+		while OM:
+			m = OM.popleft()
+			CB = 0
+			for c in self._fd.values():
+				try:
+					c.push(m)
+				except:
+					pass
+				else:
+					CB += 1
+			cmd = m[4:0x10].rstrip(b'\0').decode('utf8')
+			self.logger.info('Sent `%s\' to %d nodes' % (cmd, CB))
+	
+	def makeMessage(self, cmd, payload = b'', cksum = True):
 		cmd = cmd.encode('utf8')
 		assert len(cmd) <= 12
 		cmd += b'\0' * (12 - len(cmd))
-		payload += dblsha(payload)[:4] if cksum else b''
+		
+		cksum = dblsha(payload)[:4] if cksum else b''
 		payloadLen = pack('<L', len(payload))
-		return self.netid + cmd + payloadLen + payload
-	
-	def sendMessage(self, *a, **k):
-		m = self.makeMessage(*a, **k)
-		self._mq.append(m)
-		os.write(self._ping, b'\1')
-	
-	def makeNetAddr(self, addr):
-		timestamp = pack('<L', int(time()))
-		aIP = pack('>BBBB', *map(int, addr[0].split('.')))
-		aPort = pack('>H', addr[1])
-		return timestamp + b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xff\xff' + aIP + aPort
+		return self.netid + cmd + payloadLen + cksum + payload
 	
 	def submitBlock(self, payload):
-		self.sendMessage('block', payload)
+		self._om.append(self.makeMessage('block', payload))
+		self.wakeup()

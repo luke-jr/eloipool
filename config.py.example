@@ -52,3 +52,10 @@ GotWorkTarget = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 JSONRPCAddresses = (
 	('', 8337),
 )
+
+# Addresses to listen on for Bitcoin node
+# Note that Eloipool only supports IPv6 sockets, and if you want to bind to an
+# IPv4 address you will need to prepend it with ::ffff: eg ::ffff:192.168.1.2
+BitcoinNodeAddresses = (
+	('', 8338),
+)
