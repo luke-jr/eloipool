@@ -273,9 +273,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 	
 	def handle_close(self):
 		self.cleanupLP()
-		self.changeTask(None)
-		self.wbuf = None
-		self.close()
+		super().handle_close()
 	
 	def handle_request(self):
 		if not self.Username:

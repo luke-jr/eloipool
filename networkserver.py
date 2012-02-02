@@ -31,6 +31,8 @@ class SocketHandler:
 	ac_out_buffer_size = 4096
 	
 	def handle_close(self):
+		self.changeTask(None)
+		self.wbuf = None
 		self.close()
 	
 	def handle_error(self):
