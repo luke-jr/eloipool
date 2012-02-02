@@ -377,13 +377,7 @@ def restoreState():
 	except:
 		logger.error('Failed to restore state\n' + traceback.format_exc())
 		return
-	try:
-		os.unlink(SAVE_STATE_FILENAME)
-	except:
-		logger.info(('Failed to unlink \'%s\' following restore\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
 	logger.info('State restored successfully')
-
-restoreState()
 
 
 from jsonrpcserver import JSONRPCListener, JSONRPCServer
@@ -392,9 +386,6 @@ from networkserver import NetworkListener
 import threading
 
 if __name__ == "__main__":
-	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
-	bcnode_thr.daemon = True
-	bcnode_thr.start()
 	LSbc = []
 	if not hasattr(config, 'BitcoinNodeAddresses'):
 		config.BitcoinNodeAddresses = ()
@@ -418,4 +409,11 @@ if __name__ == "__main__":
 	server.getBlockHeader = getBlockHeader
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
+	
+	restoreState()
+	
+	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
+	bcnode_thr.daemon = True
+	bcnode_thr.start()
+	
 	server.serve_forever()
