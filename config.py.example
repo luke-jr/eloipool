@@ -30,7 +30,6 @@ CoinbaserCmd = 'let x=%d-1; echo -e "1\\n$x\\n1GEJfZRPrK2BLSSx3r6gwtuFxCUvq3QytN
 UpstreamURI = 'http://user:pass@localhost:18332'
 
 # Bitcoin p2p server for announcing blocks found
-# NOTE: Not implemented currently!
 UpstreamBitcoindNode = ('127.0.0.1', 18333)  # testnet
 
 # Network ID for the primary blockchain

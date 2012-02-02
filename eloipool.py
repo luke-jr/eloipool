@@ -300,7 +300,8 @@ if __name__ == "__main__":
 	for a in config.BitcoinNodeAddresses:
 		LSbc.append(NetworkListener(bcnode, a))
 	
-	# TODO: connect to config.UpstreamBitcoindNode
+	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
+		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
 	server = JSONRPCServer()
 	if hasattr(config, 'JSONRPCAddress'):

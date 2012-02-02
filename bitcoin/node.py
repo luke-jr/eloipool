@@ -20,6 +20,7 @@ from collections import deque
 import logging
 import networkserver
 import re
+import socket
 from struct import pack, unpack
 from time import time
 from util import dblsha, tryErr
@@ -39,10 +40,21 @@ class BitcoinLink(networkserver.SocketHandler):
 		dest = ka.pop('dest', None)
 		if dest:
 			# Initiate outbound connection
-			raise NotImplementedError
+			try:
+				if ':' not in dest[0]:
+					dest = ('::ffff:' + dest[0],) + tuple(x for x in dest[1:])
+			except:
+				pass
+			sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+			sock.connect(dest)
+			ka['sock'] = sock
+			ka['addr'] = dest
 		super().__init__(*a, **ka)
 		self.dest = dest
+		self.sentVersion = False
 		self.changeTask(None)  # FIXME: TEMPORARY
+		if dest:
+			self.pushVersion()
 	
 	def handle_readbuf(self):
 		netid = self.server.netid
@@ -100,9 +112,15 @@ class BitcoinLink(networkserver.SocketHandler):
 		r += b'\0\0\0\0'         # start_height
 		return r
 	
+	def pushVersion(self):
+		if self.sentVersion:
+			return
+		self.pushMessage('version', self.makeVersion(), 1329696000 <= time())
+		self.sentVersion = True
+	
 	def doCmd_version(self, payload):
 		# FIXME: check for loopbacks
-		self.pushMessage('version', self.makeVersion(), 1329696000 <= time())
+		self.pushVersion()
 		# FIXME: don't send verack to ancient clients
 		self.pushMessage('verack')
 
