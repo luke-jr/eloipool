@@ -16,6 +16,7 @@
 
 from .varlen import varlenEncode
 import asynchat
+from binascii import b2a_hex
 from collections import deque
 import logging
 import networkserver
@@ -84,12 +85,14 @@ class BitcoinLink(networkserver.SocketHandler):
 			method = 'doCmd_' + cmd
 			if cmd == 'version' and time() <= 1329696000:  # TEMPORARY HACK
 				self.ac_in_buffer = self.ac_in_buffer[:0x14] + dblsha(self.ac_in_buffer[0x14:payloadEnd])[:4] + self.ac_in_buffer[0x14:]
+				payloadEnd += 4
 			cksum = self.ac_in_buffer[0x14:0x18]
 			payload = self.ac_in_buffer[0x18:payloadEnd]
 			self.ac_in_buffer = self.ac_in_buffer[payloadEnd:]
 			
-			if dblsha(payload)[:4] != cksum:
-				self.logger.debug('Wrong checksum on `%s\' message; ignoring' % (cmd,))
+			realcksum = dblsha(payload)[:4]
+			if realcksum != cksum:
+				self.logger.debug('Wrong checksum on `%s\' message (%s vs actual:%s); ignoring' % (cmd, b2a_hex(cksum), b2a_hex(realcksum)))
 				return
 			
 			if hasattr(self, method):
