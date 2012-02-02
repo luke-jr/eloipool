@@ -286,6 +286,79 @@ from signal import signal, SIGUSR1
 signal(SIGUSR1, newBlockNotification)
 
 
+import os
+import os.path
+import pickle
+import signal
+import sys
+from time import sleep
+import traceback
+
+SAVE_STATE_FILENAME = 'eloipool.worklog'
+
+def exit():
+	logger = logging.getLogger('exit')
+	
+	# First, shutdown servers...
+	logger.info('Stopping servers...')
+	global server
+	server.keepgoing = False
+	os.write(server._LPSock, b'\1')  # HACK
+	i = 0
+	while server.running:
+		i += 1
+		if i >= 0x100:
+			logger.error('JSONRPCServer taking too long to stop, giving up')
+			break
+		sleep(0.01)
+	
+	# Then, save data needed to resume work
+	logger.info('Saving work state...')
+	i = 0
+	while True:
+		try:
+			with open(SAVE_STATE_FILENAME, 'wb') as f:
+				pickle.dump( (workLog, DupeShareHACK), f )
+			break
+		except:
+			i += 1
+			if i >= 0x10000:
+				logger.error('Failed to save work\n' + traceback.format_exc())
+				try:
+					os.unlink(SAVE_STATE_FILENAME)
+				except:
+					logger.error(('Failed to unlink \'%s\'; resume may have trouble\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
+	
+	# Finally, exit for real via SIGTERM
+	logger.info('Goodbye...')
+	os.kill(os.getpid(), signal.SIGTERM)
+	sys.exit(0)
+
+def restoreState():
+	if not os.path.exists(SAVE_STATE_FILENAME):
+		return
+	
+	global workLog, DupeShareHACK
+	
+	logger = logging.getLogger('restoreState')
+	logger.info('Restoring saved state from \'%s\'' % (SAVE_STATE_FILENAME,))
+	try:
+		with open(SAVE_STATE_FILENAME, 'rb') as f:
+			data = pickle.load(f)
+			workLog = data[0]
+			DupeShareHACK = data[1]
+	except:
+		logger.error('Failed to restore state\n' + traceback.format_exc())
+		return
+	try:
+		os.unlink(SAVE_STATE_FILENAME)
+	except:
+		logger.info(('Failed to unlink \'%s\' following restore\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
+	logger.info('State restored successfully')
+
+restoreState()
+
+
 from jsonrpcserver import JSONRPCListener, JSONRPCServer
 import interactivemode
 
