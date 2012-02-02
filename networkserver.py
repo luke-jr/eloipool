@@ -101,13 +101,14 @@ class SocketHandler:
 class NetworkListener:
 	logger = logging.getLogger('SocketListener')
 	
-	def __init__(self, server, server_address):
+	def __init__(self, server, server_address, address_family = socket.AF_INET6):
 		self.server = server
 		self.server_address = server_address
+		self.address_family = address_family
 		tryErr(self.setup_socket, server_address, Logger=self.logger, ErrorMsg=server_address)
 	
 	def setup_socket(self, server_address):
-		sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+		sock = socket.socket(self.address_family, socket.SOCK_STREAM)
 		sock.setblocking(0)
 		try:
 			sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
