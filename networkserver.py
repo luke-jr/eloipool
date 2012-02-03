@@ -81,8 +81,12 @@ class SocketHandler:
 		if self.wbuf:
 			self.closeme = True
 			return
+		if self.fd == -1:
+			# Already closed
+			return
 		self.server.unregister_socket(self.fd)
 		self.socket.close()
+		self.fd = -1
 	
 	def changeTask(self, f, t = None):
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
