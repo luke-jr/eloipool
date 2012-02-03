@@ -485,7 +485,14 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		now = time()
 		
 		for ic in C:
-			ic.wakeLongpoll()
+			try:
+				ic.wakeLongpoll()
+			except socket.error:
+				OC -= 1
+				# Ignore socket errors; let the main event loop take care of them later
+			except:
+				OC -= 1
+				self.logger.debug('Error waking longpoll handler:\n' + traceback.format_exc())
 		
 		self._LPWaitTime = time()
 		self.logger.info('Longpoll woke up %d clients in %.3f seconds' % (OC, self._LPWaitTime - now))
