@@ -311,6 +311,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		self.extensions = []
 		self.reqinfo = {}
 		self.quirks = {}
+		self.quirks['NELH'] = None  # FIXME: identify which clients have a problem with this
 		while True:
 			try:
 				data = hs.pop(0)
