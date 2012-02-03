@@ -201,3 +201,9 @@ class merkleMaker(threading.Thread):
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
+	
+	def getMC(self):
+		(prevBlock, bits) = self.currentBlock
+		mt = self.currentMerkleTree
+		cb = self.makeCoinbase()
+		return (mt, cb, prevBlock, bits)

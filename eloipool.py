@@ -139,6 +139,12 @@ def getBlockHeader(username):
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return hdr
 
+def getBlockTemplate(username):
+	MC = MM.getMC()
+	(merkleTree, coinbase, prevBlock, bits) = MC
+	workLog.setdefault(username, {})[coinbase] = (MC, time())
+	return MC
+
 def YN(b):
 	if b is None:
 		return None
@@ -407,6 +413,7 @@ if __name__ == "__main__":
 		server.SecretUser = config.SecretUser
 	server.aux = MM.CoinbaseAux
 	server.getBlockHeader = getBlockHeader
+	server.getBlockTemplate = getBlockTemplate
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
 	

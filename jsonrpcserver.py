@@ -17,6 +17,7 @@
 import asynchat
 from base64 import b64decode
 from binascii import a2b_hex, b2a_hex
+from copy import deepcopy
 from datetime import datetime
 from email.utils import formatdate
 import json
@@ -260,6 +261,29 @@ class JSONRPCHandler(networkserver.SocketHandler):
 			self._JSONHeaders['X-Reject-Reason'] = str(rej)
 			return False
 		return True
+	
+	getmemorypool_rv_template = {
+		'version': 1,
+	}
+	def doJSON_getmemorypool(self, data=None):
+		if not data is None:
+			return self.doJSON_submitblock(data)
+		
+		rv = dict(self.getmemorypool_rv_template)
+		MC = self.server.getBlockTemplate(self.Username)
+		(merkleTree, cb, prevBlock, bits) = MC
+		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
+		tl = []
+		for txn in merkleTree.data[1:]:
+			tl.append(b2a_hex(txn.data).decode('ascii'))
+		rv['transactions'] = tl
+		rv['time'] = int(time())
+		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
+		t = deepcopy(merkleTree.data[0])
+		t.setCoinbase(cb)
+		t.assemble()
+		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
+		return rv
 	
 	def doJSON_setworkaux(self, k, hexv = None):
 		if self.Username != self.server.SecretUser:
