@@ -334,7 +334,8 @@ def saveState():
 	while True:
 		try:
 			with open(SAVE_STATE_FILENAME, 'wb') as f:
-				pickle.dump( (workLog, DupeShareHACK), f )
+				pickle.dump(DupeShareHACK, f)
+				pickle.dump(workLog, f)
 			break
 		except:
 			i += 1
@@ -368,12 +369,18 @@ def restoreState():
 	global workLog, DupeShareHACK
 	
 	logger = logging.getLogger('restoreState')
-	logger.info('Restoring saved state from \'%s\' (%d bytes)' % (SAVE_STATE_FILENAME, os.stat(SAVE_STATE_FILENAME).st_size))
+	s = os.stat(SAVE_STATE_FILENAME)
+	logger.info('Restoring saved state from \'%s\' (%d bytes)' % (SAVE_STATE_FILENAME, s.st_size))
 	try:
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
-			data = pickle.load(f)
-			workLog = data[0]
-			DupeShareHACK = data[1]
+			DupeShareHACK = pickle.load(f)
+			if type(DupeShareHACK) == tuple:
+				workLog = DupeShareHACK[0]
+				DupeShareHACK = DupeShareHACK[1]
+			elif s.st_mtime + 120 >= time():
+				workLog = pickle.load(f)
+			else:
+				logger.debug('Skipping restore of expired workLog')
 	except:
 		logger.error('Failed to restore state\n' + traceback.format_exc())
 		return
