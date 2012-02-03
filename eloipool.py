@@ -325,7 +325,7 @@ def stopServers():
 		for fd in s._fd.keys():
 			os.close(fd)
 
-def saveState():
+def saveState(t = None):
 	logger = logging.getLogger('saveState')
 	
 	# Then, save data needed to resume work
@@ -334,6 +334,7 @@ def saveState():
 	while True:
 		try:
 			with open(SAVE_STATE_FILENAME, 'wb') as f:
+				pickle.dump(t, f)
 				pickle.dump(DupeShareHACK, f)
 				pickle.dump(workLog, f)
 			break
@@ -347,15 +348,17 @@ def saveState():
 					logger.error(('Failed to unlink \'%s\'; resume may have trouble\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
 
 def exit():
+	t = time()
 	stopServers()
-	saveState()
+	saveState(t)
 	logging.getLogger('exit').info('Goodbye...')
 	os.kill(os.getpid(), signal.SIGTERM)
 	sys.exit(0)
 
 def restart():
+	t = time()
 	stopServers()
-	saveState()
+	saveState(t)
 	logging.getLogger('restart').info('Restarting...')
 	try:
 		os.execv(sys.argv[0], sys.argv)
@@ -373,18 +376,28 @@ def restoreState():
 	logger.info('Restoring saved state from \'%s\' (%d bytes)' % (SAVE_STATE_FILENAME, s.st_size))
 	try:
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
-			DupeShareHACK = pickle.load(f)
-			if type(DupeShareHACK) == tuple:
-				workLog = DupeShareHACK[0]
-				DupeShareHACK = DupeShareHACK[1]
-			elif s.st_mtime + 120 >= time():
-				workLog = pickle.load(f)
+			t = pickle.load(f)
+			if type(t) == tuple:
+				workLog = t[0]
+				DupeShareHACK = t[1]
+				t = None
 			else:
-				logger.debug('Skipping restore of expired workLog')
+				if isinstance(t, dict):
+					DupeShareHACK = t
+					t = None
+				else:
+					DupeShareHACK = pickle.load(f)
+				
+				if s.st_mtime + 120 >= time():
+					workLog = pickle.load(f)
+				else:
+					logger.debug('Skipping restore of expired workLog')
 	except:
 		logger.error('Failed to restore state\n' + traceback.format_exc())
 		return
 	logger.info('State restored successfully')
+	if t:
+		logger.info('Total downtime: %g seconds' % (time() - t,))
 
 
 from jsonrpcserver import JSONRPCListener, JSONRPCServer
