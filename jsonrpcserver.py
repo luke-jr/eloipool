@@ -425,7 +425,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
 		self.reading_headers = True
 		self._LP = False
-		self.changeTask(self.handle_timeout, time() + 15)
+		self.changeTask(self.handle_timeout, time() + 150)
 		if 'close' in self.quirks:
 			self.close()
 	
