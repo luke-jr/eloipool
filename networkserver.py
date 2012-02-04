@@ -254,5 +254,5 @@ class AsyncSocketServer:
 					tryErr(o.handle_error)
 				except:
 					self.logger.error(traceback.format_exc())
-					tryErr(o.handle_close)
+					tryErr(o.handle_error)
 		self.running = False
