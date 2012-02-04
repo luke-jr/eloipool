@@ -94,6 +94,10 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		value = value.split(b':')[0]
 		self.Username = value.decode('utf8')
 	
+	def doHeader_connection(self, value):
+		if value == b'close':
+			self.quirks['close'] = None
+	
 	def doHeader_content_length(self, value):
 		self.CL = int(value)
 	
@@ -311,6 +315,8 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		self.extensions = []
 		self.reqinfo = {}
 		self.quirks = {}
+		if data[2:] != [b'HTTP/1.1']:
+			self.quirks['close'] = None
 		self.quirks['NELH'] = None  # FIXME: identify which clients have a problem with this
 		while True:
 			try:
@@ -420,12 +426,15 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		self.reading_headers = True
 		self._LP = False
 		self.changeTask(self.handle_timeout, time() + 15)
+		if 'close' in self.quirks:
+			self.close()
 	
 	def collect_incoming_data(self, data):
 		asynchat.async_chat._collect_incoming_data(self, data)
 	
 	def __init__(self, *a, **ka):
 		super().__init__(*a, **ka)
+		self.quirks = {}
 		self.reset_request()
 	
 setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
