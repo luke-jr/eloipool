@@ -114,7 +114,7 @@ class NetworkListener:
 		self.address_family = address_family
 		tryErr(self.setup_socket, server_address, Logger=self.logger, ErrorMsg=server_address)
 	
-	def setup_socket(self, server_address):
+	def _makebind_py(self, server_address):
 		sock = socket.socket(self.address_family, socket.SOCK_STREAM)
 		sock.setblocking(0)
 		try:
@@ -122,6 +122,33 @@ class NetworkListener:
 		except socket.error:
 			pass
 		sock.bind(server_address)
+		return sock
+	
+	def _makebind_su(self, server_address):
+		if self.address_family != socket.AF_INET6:
+			raise NotImplementedError
+		
+		from bindservice import bindservice
+		(node, service) = server_address
+		if not node: node = ''
+		if not service: service = ''
+		fd = bindservice(str(node), str(service))
+		sock = socket.fromfd(fd, socket.AF_INET6, socket.SOCK_STREAM)
+		sock.setblocking(0)
+		return sock
+	
+	def _makebind(self, *a, **ka):
+		try:
+			return self._makebind_py(*a, **ka)
+		except BaseException as e:
+			try:
+				return self._makebind_su(*a, **ka)
+			except:
+				pass
+			raise
+	
+	def setup_socket(self, server_address):
+		sock = self._makebind(server_address)
 		sock.listen(100)
 		self.server.register_socket(sock.fileno(), self)
 		self.socket = sock
