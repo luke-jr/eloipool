@@ -76,6 +76,7 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 	return t
 
 
+import jsonrpcserver
 from util import Bits2Target
 
 workLog = {}
@@ -90,6 +91,7 @@ def updateBlocks():
 def blockChanged():
 	global DupeShareHACK
 	DupeShareHACK = {}
+	jsonrpcserver._CheckForDupesHACK = {}
 	global MM, networkTarget, server
 	networkTarget = Bits2Target(MM.currentBlock[1])
 	workLog.clear()
