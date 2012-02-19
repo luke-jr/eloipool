@@ -204,21 +204,14 @@ def checkShare(share):
 	MWL = workLog[username]
 	if shareMerkleRoot not in MWL:
 		raise RejectedShare('unknown-work')
-	(MRD, t) = MWL[shareMerkleRoot]
+	(MRD, issueT) = MWL[shareMerkleRoot]
 	share['MRD'] = MRD
 	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
 	DupeShareHACK[data] = None
 	
-	shareTimestamp = unpack('<L', data[68:72])[0]
 	shareTime = share['time'] = time()
-	if shareTime < t - 120:
-		raise RejectedShare('stale-work')
-	if shareTimestamp < shareTime - 300:
-		raise RejectedShare('time-too-old')
-	if shareTimestamp > shareTime + 7200:
-		raise RejectedShare('time-too-new')
 	
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':
@@ -265,6 +258,14 @@ def checkShare(share):
 			thr.start()
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
+	
+	shareTimestamp = unpack('<L', data[68:72])[0]
+	if shareTime < issueT - 120:
+		raise RejectedShare('stale-work')
+	if shareTimestamp < shareTime - 300:
+		raise RejectedShare('time-too-old')
+	if shareTimestamp > shareTime + 7200:
+		raise RejectedShare('time-too-new')
 	
 	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')
