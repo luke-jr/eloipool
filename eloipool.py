@@ -93,7 +93,7 @@ def blockChanged():
 	DupeShareHACK = {}
 	jsonrpcserver._CheckForDupesHACK = {}
 	global MM, networkTarget, server
-	networkTarget = Bits2Target(MM.currentBlock[1])
+	networkTarget = Bits2Target(MM.currentBlock[2])
 	workLog.clear()
 	updateBlocks()
 
@@ -183,7 +183,7 @@ def blockSubmissionThread(payload):
 def checkShare(share):
 	data = share['data']
 	data = data[:80]
-	(prevBlock, bits) = MM.currentBlock
+	(prevBlock, height, bits) = MM.currentBlock
 	sharePrevBlock = data[4:36]
 	if sharePrevBlock != prevBlock:
 		if sharePrevBlock == MM.lastBlock[0]:

@@ -35,7 +35,9 @@ class Txn:
 		o.locktime = 0
 		return o
 	
-	def setCoinbase(self, sigScript, seqno = 0xffffffff):
+	def setCoinbase(self, sigScript, seqno = 0xffffffff, height = None):
+		if not height is None:
+			sigScript = pack('<BL', 4, height) + sigScript
 		self.inputs = ( ((_nullprev, 0xffffffff), sigScript, seqno), )
 	
 	def addInput(self, prevout, sigScript, seqno = 0xffffffff):
@@ -73,6 +75,9 @@ class Txn:
 	
 	def isCoinbase(self):
 		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.input[0][0] == _nullprev
+	
+	def getCoinbase(self):
+		return self.inputs[0][1]
 	
 	def assemble(self):
 		data = pack('<L', self.version)
