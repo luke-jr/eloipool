@@ -57,7 +57,13 @@ class merkleMaker(threading.Thread):
 	
 	def updateBlock(self, newBlock, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
-			return
+			if bits in (None, self.currentBlock[1]):
+				return
+			self.logger.error('Was working on block with wrong specs: %s (bits: %s->%s)' % (
+				b2a_hex(newBlock[::-1]).decode('utf8'),
+				b2a_hex(self.currentBlock[1][::-1]).decode('utf8'),
+				b2a_hex(bits[::-1]).decode('utf8'),
+			))
 		
 		if bits is None:
 			bits = self.currentBlock[1]
@@ -66,7 +72,8 @@ class merkleMaker(threading.Thread):
 		self.logger.info('New block: %s (bits: %s)' % _HBH)
 		self.merkleRoots.clear()
 		self.currentMerkleTree = self.clearMerkleTree
-		self.lastBlock = self.currentBlock
+		if self.currentBlock[0] != newBlock:
+			self.lastBlock = self.currentBlock
 		self.currentBlock = (newBlock, bits)
 		self.needMerkle = 2
 		self.onBlockChange()
