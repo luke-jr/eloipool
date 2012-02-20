@@ -38,6 +38,7 @@ class merkleMaker(threading.Thread):
 		self.CoinbaseAux = {}
 		self.isOverflowed = False
 		self.overflowed = 0
+		self.DifficultyChangeMod = 2016
 	
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
@@ -65,30 +66,40 @@ class merkleMaker(threading.Thread):
 		if newBlock == self.currentBlock[0]:
 			if height in (None, self.currentBlock[1]) and bits in (None, self.currentBlock[2]):
 				return
-			self.logger.error('Was working on block with wrong specs: %s (height: %d->%d; bits: %s->%s' % (
-				b2a_hex(newBlock[::-1]).decode('utf8'),
-				self.currentBlock[1],
-				height,
-				b2a_hex(self.currentBlock[2][::-1]).decode('utf8'),
-				b2a_hex(bits[::-1]).decode('utf8'),
-			))
+			if not self.currentBlock[2] is None:
+				self.logger.error('Was working on block with wrong specs: %s (height: %d->%d; bits: %s->%s' % (
+					b2a_hex(newBlock[::-1]).decode('utf8'),
+					self.currentBlock[1],
+					height,
+					b2a_hex(self.currentBlock[2][::-1]).decode('utf8'),
+					b2a_hex(bits[::-1]).decode('utf8'),
+				))
 		
 		if height is None:
 			height = self.currentBlock[1] + 1
 		if bits is None:
-			bits = self.currentBlock[2]
-		if _HBH is None:
-			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
-		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
-		self.merkleRoots.clear()
-		if self.currentBlock[1] != height:
-			if self.currentBlock[1] == height - 1:
-				self.clearMerkleRoots = self.nextMerkleRoots
+			if height % self.DifficultyChangeMod == 1 or self.currentBlock[2] is None:
+				self.logger.warning('New block: %s (height %d; bits: UNKNOWN)' % (b2a_hex(newBlock[::-1]).decode('utf8'), height))
 			else:
-				if self.currentBlock[1]:
-					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
-				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
-			self.nextMerkleRoots = Queue(self._MaxClearSize)
+				bits = self.currentBlock[2]
+			
+			# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
+			height -= 1
+			self.clearMerkleRoots = Queue(0)
+		else:
+			if _HBH is None:
+				_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
+			self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
+			
+			if self.currentBlock[1] != height:
+				if self.currentBlock[1] == height - 1:
+					self.clearMerkleRoots = self.nextMerkleRoots
+				else:
+					if self.currentBlock[1]:
+						self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
+					self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+				self.nextMerkleRoots = Queue(self._MaxClearSize)
+		self.merkleRoots.clear()
 		self.currentMerkleTree = self.clearMerkleTree
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
@@ -196,6 +207,10 @@ class merkleMaker(threading.Thread):
 	def merkleMaker_I(self):
 		global now
 		
+		# No bits = no mining :(
+		if self.currentBlock[2] is None:
+			return self.updateMerkleTree()
+		
 		# First, ensure we have the minimum clear, next, and regular (in that order)
 		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[0]:
 			return self.makeClear()
@@ -237,7 +252,6 @@ class merkleMaker(threading.Thread):
 		super().start(*a, **k)
 	
 	def getMRD(self):
-		(prevBlock, height, bits) = self.currentBlock
 		try:
 			MRD = self.merkleRoots.pop()
 			self.LowestMerkleRoots = min(len(self.merkleRoots), self.LowestMerkleRoots)
@@ -250,4 +264,5 @@ class merkleMaker(threading.Thread):
 			self.LowestClearMerkleRoots = min(self.clearMerkleRoots.qsize(), self.LowestClearMerkleRoots)
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
+		(prevBlock, height, bits) = self.currentBlock
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)

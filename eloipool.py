@@ -93,7 +93,11 @@ def blockChanged():
 	DupeShareHACK = {}
 	jsonrpcserver._CheckForDupesHACK = {}
 	global MM, networkTarget, server
-	networkTarget = Bits2Target(MM.currentBlock[2])
+	bits = MM.currentBlock[2]
+	if bits is None:
+		networkTarget = None
+	else:
+		networkTarget = Bits2Target(bits)
 	workLog.clear()
 	updateBlocks()
 
