@@ -76,16 +76,11 @@ class BitcoinLink(networkserver.SocketHandler):
 			if payloadLen > MAX_PACKET_PAYLOAD:
 				raise RuntimeError('Packet payload is too long (%d bytes)' % (payloadLen,))
 			payloadEnd = payloadLen + 0x18
-			if cmd == 'version' and time() <= 1329696000:  # TEMPORARY HACK
-				payloadEnd -= 4
 			if len(self.ac_in_buffer) < payloadEnd:
 				# Don't have the whole packet yet
 				break
 			
 			method = 'doCmd_' + cmd
-			if cmd == 'version' and time() <= 1329696000:  # TEMPORARY HACK
-				self.ac_in_buffer = self.ac_in_buffer[:0x14] + dblsha(self.ac_in_buffer[0x14:payloadEnd])[:4] + self.ac_in_buffer[0x14:]
-				payloadEnd += 4
 			cksum = self.ac_in_buffer[0x14:0x18]
 			payload = self.ac_in_buffer[0x18:payloadEnd]
 			self.ac_in_buffer = self.ac_in_buffer[payloadEnd:]
@@ -118,7 +113,7 @@ class BitcoinLink(networkserver.SocketHandler):
 	def pushVersion(self):
 		if self.sentVersion:
 			return
-		self.pushMessage('version', self.makeVersion(), 1329696000 <= time())
+		self.pushMessage('version', self.makeVersion())
 		self.sentVersion = True
 	
 	def doCmd_version(self, payload):
@@ -155,12 +150,12 @@ class BitcoinNode(networkserver.AsyncSocketServer):
 			cmd = m[4:0x10].rstrip(b'\0').decode('utf8')
 			self.logger.info('Sent `%s\' to %d nodes' % (cmd, CB))
 	
-	def makeMessage(self, cmd, payload = b'', cksum = True):
+	def makeMessage(self, cmd, payload = b''):
 		cmd = cmd.encode('utf8')
 		assert len(cmd) <= 12
 		cmd += b'\0' * (12 - len(cmd))
 		
-		cksum = dblsha(payload)[:4] if cksum else b''
+		cksum = dblsha(payload)[:4]
 		payloadLen = pack('<L', len(payload))
 		return self.netid + cmd + payloadLen + cksum + payload
 	
