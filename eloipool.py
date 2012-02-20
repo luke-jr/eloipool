@@ -21,7 +21,7 @@ import config
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
-for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker'):
+for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
 	logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
