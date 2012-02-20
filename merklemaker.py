@@ -63,7 +63,7 @@ class merkleMaker(threading.Thread):
 			bits = self.currentBlock[1]
 		if _HBH is None:
 			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
-		self.logger.debug('New block: %s (bits: %s)' % _HBH)
+		self.logger.info('New block: %s (bits: %s)' % _HBH)
 		self.merkleRoots.clear()
 		self.currentMerkleTree = self.clearMerkleTree
 		self.lastBlock = self.currentBlock
