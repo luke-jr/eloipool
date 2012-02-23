@@ -58,6 +58,9 @@ class Txn:
 	def isCoinbase(self):
 		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.input[0][0] == _nullprev
 	
+	def getCoinbase(self):
+		return self.inputs[0][1]
+	
 	def assemble(self):
 		data = pack('<L', self.version)
 		
