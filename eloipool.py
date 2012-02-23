@@ -23,7 +23,7 @@ import subprocess
 from time import time
 
 def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
-	t = Txn.new()
+	txn = Txn.new()
 	
 	if useCoinbaser and hasattr(config, 'CoinbaserCmd'):
 		coinbased = 0
@@ -36,22 +36,22 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 				amount = int(p.stdout.readline())
 				addr = p.stdout.readline().rstrip(b'\n').decode('utf8')
 				pkScript = BitcoinScript.toAddress(addr)
-				t.addOutput(amount, pkScript)
+				txn.addOutput(amount, pkScript)
 				coinbased += amount
 		except:
 			coinbased = coinbaseValue + 1
 		if coinbased >= coinbaseValue:
 			logging.getLogger('makeCoinbaseTxn').error('Coinbaser failed!')
-			t.outputs = []
+			txn.outputs = []
 		else:
 			coinbaseValue -= coinbased
 	
 	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
-	t.addOutput(coinbaseValue, pkScript)
+	txn.addOutput(coinbaseValue, pkScript)
 	
 	# TODO
 	# TODO: red flag on dupe coinbase
-	return t
+	return txn
 
 
 from util import Bits2Target
@@ -176,9 +176,9 @@ def checkShare(share):
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
 	txlist = MRD[1].data
-	t = txlist[0]
-	t.setCoinbase(MRD[2])
-	t.assemble()
+	cbtxn = txlist[0]
+	cbtxn.setCoinbase(MRD[2])
+	cbtxn.assemble()
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
@@ -189,11 +189,11 @@ def checkShare(share):
 	# Gotwork hack...
 	if gotwork:
 		try:
-			coinbaseMrkl = t.data
+			coinbaseMrkl = cbtxn.data
 			coinbaseMrkl += blkhash
 			steps = MRD[1]._steps
 			coinbaseMrkl += pack('B', len(steps) + 1)
-			coinbaseMrkl += t.txid
+			coinbaseMrkl += cbtxn.txid
 			for step in steps:
 				coinbaseMrkl += step
 			coinbaseMrkl += b"\0\0\0\0"
