@@ -111,7 +111,7 @@ from binascii import b2a_hex
 from copy import deepcopy
 from struct import pack, unpack
 from time import time
-from util import RejectedShare, dblsha, hash2int
+from util import RejectedShare, dblsha, hash2int, swap32
 import jsonrpc
 import threading
 import traceback
@@ -158,7 +158,10 @@ def logShare(share):
 	username = share['username']
 	reason = share.get('rejectReason', None)
 	upstreamResult = share.get('upstreamResult', None)
-	solution = share['_origdata']
+	if '_origdata' in share:
+		solution = share['_origdata']
+	else:
+		solution = b2a_hex(swap32(share['data']))
 	#solution = b2a_hex(solution).decode('utf8')
 	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
 	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
@@ -168,7 +171,8 @@ def logShare(share):
 RBDs = []
 RBPs = []
 
-from bitcoin.varlen import varlenEncode
+from bitcoin.varlen import varlenEncode, varlenDecode
+import bitcoin.txn
 def assembleBlock(blkhdr, txlist):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
@@ -194,7 +198,6 @@ def checkShare(share):
 			raise RejectedShare('stale-prevblk')
 		raise RejectedShare('bad-prevblk')
 	
-	shareMerkleRoot = data[36:68]
 	# TODO: use userid
 	username = share['username']
 	if username not in workLog:
@@ -205,11 +208,25 @@ def checkShare(share):
 	if data[:4] != b'\1\0\0\0':
 		raise RejectedShare('bad-version')
 	
+	shareMerkleRoot = data[36:68]
+	if 'blkdata' in share:
+		pl = share['blkdata']
+		(txncount, pl) = varlenDecode(pl)
+		cbtxn = bitcoin.txn.Txn(pl)
+		cbtxn.disassemble(retExtra=True)
+		wli = cbtxn.getCoinbase()
+		mode = 'MC'
+		moden = 1
+	else:
+		wli = shareMerkleRoot
+		mode = 'MRD'
+		moden = 0
+	
 	MWL = workLog[username]
-	if shareMerkleRoot not in MWL:
+	if wli not in MWL:
 		raise RejectedShare('unknown-work')
-	(MRD, t) = MWL[shareMerkleRoot]
-	share['MRD'] = MRD
+	(wld, t) = MWL[wli]
+	share[mode] = wld
 	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
@@ -234,9 +251,10 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
-	workMerkleTree = MRD[1]
-	workCoinbase = MRD[2]
+	workMerkleTree = wld[1]
+	workCoinbase = wld[2]
 	
+	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
 	cbtxn = txlist[0]
 	cbtxn.setCoinbase(workCoinbase)
@@ -244,8 +262,12 @@ def checkShare(share):
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
-		RBDs.append( deepcopy( (data, txlist) ) )
-		payload = assembleBlock(data, txlist)
+		if not moden:
+			RBDs.append( deepcopy( (data, txlist) ) )
+			payload = assembleBlock(data, txlist)
+		else:
+			RBDs.append( deepcopy( (data, txlist, share['blkdata']) ) )
+			payload = share['data'] + share['blkdata']
 		logfunc('Real block payload: %s' % (payload,))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
@@ -272,6 +294,13 @@ def checkShare(share):
 			thr.start()
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
+	
+	if moden:
+		if shareMerkleRoot != workMerkleTree.merkleRoot():
+			raise RejectedShare('bad-txnmrklroot')
+		allowed = assembleBlock(data, txlist)
+		if allowed != share['data'] + share['blkdata']:
+			raise RejectedShare('bad-txns')
 	
 	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')
