@@ -83,10 +83,10 @@ class merkleMaker(threading.Thread):
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = [a for a in map(a2b_hex, MP['transactions'])]
 		
-		t = self.makeCoinbaseTxn(MP['coinbasevalue'])
-		t.setCoinbase(b'\0\0')
-		t.assemble()
-		txnlist.insert(0, t.data)
+		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
+		cbtxn.setCoinbase(b'\0\0')
+		cbtxn.assemble()
+		txnlist.insert(0, cbtxn.data)
 		
 		txnlistsz = sum(map(len, txnlist))
 		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
@@ -99,7 +99,7 @@ class merkleMaker(threading.Thread):
 			txnlistsz -= countSigOps(txnlist.pop())
 		
 		txnlist = [a for a in map(Txn, txnlist[1:])]
-		txnlist.insert(0, t)
+		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
 		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
@@ -133,10 +133,10 @@ class merkleMaker(threading.Thread):
 		return rv
 	
 	def makeMerkleRoot(self, merkleTree):
-		t = merkleTree.data[0]
+		cbtxn = merkleTree.data[0]
 		cb = self.makeCoinbase()
-		t.setCoinbase(cb)
-		t.assemble()
+		cbtxn.setCoinbase(cb)
+		cbtxn.assemble()
 		merkleRoot = merkleTree.merkleRoot()
 		return (merkleRoot, merkleTree, cb)
 	
