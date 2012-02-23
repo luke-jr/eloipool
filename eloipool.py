@@ -188,9 +188,12 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
-	txlist = MRD[1].data
+	workMerkleTree = MRD[1]
+	workCoinbase = MRD[2]
+	
+	txlist = workMerkleTree.data
 	t = txlist[0]
-	t.setCoinbase(MRD[2])
+	t.setCoinbase(workCoinbase)
 	t.assemble()
 	
 	if blkhashn <= networkTarget:
@@ -204,7 +207,7 @@ def checkShare(share):
 		try:
 			coinbaseMrkl = t.data
 			coinbaseMrkl += blkhash
-			steps = MRD[1]._steps
+			steps = workMerkleTree._steps
 			coinbaseMrkl += pack('B', len(steps))
 			for step in steps:
 				coinbaseMrkl += step
