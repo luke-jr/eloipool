@@ -141,7 +141,7 @@ def getBlockHeader(username):
 
 def getBlockTemplate(username):
 	MC = MM.getMC()
-	(merkleTree, coinbase, prevBlock, bits) = MC
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
 	workLog.setdefault(username, {})[coinbase] = (MC, time())
 	return MC
 

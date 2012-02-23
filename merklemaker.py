@@ -206,4 +206,4 @@ class merkleMaker(threading.Thread):
 		(prevBlock, bits) = self.currentBlock
 		mt = self.currentMerkleTree
 		cb = self.makeCoinbase()
-		return (mt, cb, prevBlock, bits)
+		return (None, mt, cb, prevBlock, bits)

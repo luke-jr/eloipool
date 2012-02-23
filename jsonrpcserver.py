@@ -271,7 +271,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		
 		rv = dict(self.getmemorypool_rv_template)
 		MC = self.server.getBlockTemplate(self.Username)
-		(merkleTree, cb, prevBlock, bits) = MC
+		(dummy, merkleTree, cb, prevBlock, bits) = MC
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
 		tl = []
 		for txn in merkleTree.data[1:]:
