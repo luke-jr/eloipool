@@ -51,20 +51,20 @@ class Txn:
 		inputs = []
 		for i in range(inputCount):
 			prevout = (data[:32], unpack('<L', data[32:36])[0])
-			(sigScript, data) = varlenDecode(data[36:])
-			sigScript = data[:sigScript]
-			seqno = unpack('<L', data[sigScript:sigScript + 4])[0]
-			data = data[sigScript + 4:]
+			(sigScriptLen, data) = varlenDecode(data[36:])
+			sigScript = data[:sigScriptLen]
+			seqno = unpack('<L', data[sigScriptLen:sigScriptLen + 4])[0]
+			data = data[sigScriptLen + 4:]
 			inputs.append( (prevout, sigScript, seqno) )
 		self.inputs = inputs
 		
-		(outputCount, data) = varlenDecode(self.data[4:])
+		(outputCount, data) = varlenDecode(data)
 		outputs = []
 		for i in range(outputCount):
 			amount = unpack('<Q', data[:8])[0]
-			(pkScript, data) = varlenDecode(data[8:])
-			pkScript = data[:pkScript]
-			data = data[pkScript:]
+			(pkScriptLen, data) = varlenDecode(data[8:])
+			pkScript = data[:pkScriptLen]
+			data = data[pkScriptLen:]
 			outputs.append( (amount, pkScript) )
 		self.outputs = outputs
 		
