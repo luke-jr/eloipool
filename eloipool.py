@@ -161,7 +161,7 @@ def logShare(share):
 	if '_origdata' in share:
 		solution = share['_origdata']
 	else:
-		solution = b2a_hex(swap32(share['data']))
+		solution = b2a_hex(swap32(share['data'])).decode('utf8')
 	#solution = b2a_hex(solution).decode('utf8')
 	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
 	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
