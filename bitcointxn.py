@@ -57,7 +57,7 @@ class Txn:
 			outputs.append( (amount, pkScript) )
 		self.outputs = outputs
 		
-		self.locktime = unpack('<L', data)[0]
+		self.locktime = unpack('<L', data[:4])[0]
 		if not retExtra:
 			assert len(data) == 4
 		else:
