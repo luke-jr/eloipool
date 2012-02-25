@@ -301,12 +301,13 @@ def checkShare(share):
 	
 	if moden:
 		cbpre = cbtxn.getCoinbase()
-		if coinbase[:len(cbpre)] != cbpre:
+		cbpreLen = len(cbpre)
+		if coinbase[:cbpreLen] != cbpre:
 			raise RejectedShare('bad-cb-prefix')
 		
 		# Filter out known "I support" flags, to prevent exploits
 		for ff in (b'/P2SH/', b'NOP2SH', b'p2sh/CHV', b'p2sh/NOCHV'):
-			if ff in coinbase:
+			if coinbase.find(ff) > cbpreLen - len(ff):
 				raise RejectedShare('bad-cb-flag')
 		
 		if len(coinbase) > 100:
