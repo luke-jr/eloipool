@@ -50,6 +50,8 @@ def getMRD():
 	cbtxn = merkleTree.data[0]
 	coinbase = cbtxn.originalCB + pack('>Q', currentwork[2]).lstrip(b'\0')
 	if len(coinbase) > 100:
+		if len(cbtxn.originalCB) > 100:
+			raise RuntimeError('Pool gave us a coinbase that is too long!')
 		currentwork[1] = 0
 		return getMRD()
 	cbtxn.setCoinbase(coinbase)
