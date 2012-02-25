@@ -49,6 +49,9 @@ def getMRD():
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	cbtxn = merkleTree.data[0]
 	coinbase = cbtxn.originalCB + pack('>Q', currentwork[2]).lstrip(b'\0')
+	if len(coinbase) > 100:
+		currentwork[1] = 0
+		return getMRD()
 	cbtxn.setCoinbase(coinbase)
 	cbtxn.assemble()
 	merkleRoot = merkleTree.merkleRoot()
