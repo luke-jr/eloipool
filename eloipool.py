@@ -142,7 +142,9 @@ def getBlockHeader(username):
 def getBlockTemplate(username):
 	MC = MM.getMC()
 	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
-	workLog.setdefault(username, {})[coinbase] = (MC, time())
+	wliLen = coinbase[0]
+	wli = coinbase[1:wliLen+1]
+	workLog.setdefault(username, {})[wli] = (MC, time())
 	return MC
 
 def YN(b):
@@ -214,7 +216,9 @@ def checkShare(share):
 		(txncount, pl) = varlenDecode(pl)
 		cbtxn = bitcoin.txn.Txn(pl)
 		cbtxn.disassemble(retExtra=True)
-		wli = cbtxn.getCoinbase()
+		coinbase = cbtxn.getCoinbase()
+		wliLen = coinbase[0]
+		wli = coinbase[1:wliLen+1]
 		mode = 'MC'
 		moden = 1
 	else:
@@ -296,8 +300,25 @@ def checkShare(share):
 			checkShare.logger.warning('Failed to build gotwork request')
 	
 	if moden:
-		if shareMerkleRoot != workMerkleTree.merkleRoot():
+		cbpre = cbtxn.getCoinbase()
+		if coinbase[:len(cbpre)] != cbpre:
+			raise RejectedShare('bad-cb-prefix')
+		
+		# Filter out known "I support" flags, to prevent exploits
+		for ff in (b'/P2SH/', b'NOP2SH', b'p2sh/CHV', b'p2sh/NOCHV'):
+			if ff in coinbase:
+				raise RejectedShare('bad-cb-flag')
+		
+		if len(coinbase) > 100:
+			raise RejectedShare('bad-cb-length')
+		
+		cbtxn = deepcopy(cbtxn)
+		cbtxn.setCoinbase(coinbase)
+		cbtxn.assemble()
+		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
 			raise RejectedShare('bad-txnmrklroot')
+		
+		txlist = [cbtxn,] + txlist[1:]
 		allowed = assembleBlock(data, txlist)
 		if allowed != share['data'] + share['blkdata']:
 			raise RejectedShare('bad-txns')

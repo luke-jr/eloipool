@@ -119,6 +119,8 @@ class merkleMaker(threading.Thread):
 			_makeCoinbase[1] += 1
 		rv = self.CoinbasePrefix
 		rv += pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+		# NOTE: Not using varlenEncode, since this is always guaranteed to be < 100
+		rv = bytes( (len(rv),) ) + rv
 		for v in self.CoinbaseAux.values():
 			rv += v
 		if len(rv) > 100:

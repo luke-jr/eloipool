@@ -263,7 +263,9 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		return True
 	
 	getmemorypool_rv_template = {
-		'mutable': [],
+		'mutable': [
+			'coinbase/append',
+		],
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 		'version': 1,
