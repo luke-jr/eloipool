@@ -44,35 +44,50 @@ class Txn:
 	def addOutput(self, amount, pkScript):
 		self.outputs.append( (amount, pkScript) )
 	
-	def disassemble(self):
+	def disassemble(self, retExtra = False):
 		self.version = unpack('<L', self.data[:4])[0]
+		rc = [4]
 		
-		(inputCount, data) = varlenDecode(self.data[4:])
+		(inputCount, data) = varlenDecode(self.data[4:], rc)
 		inputs = []
 		for i in range(inputCount):
 			prevout = (data[:32], unpack('<L', data[32:36])[0])
-			(sigScriptLen, data) = varlenDecode(data[36:])
+			rc[0] += 36
+			(sigScriptLen, data) = varlenDecode(data[36:], rc)
 			sigScript = data[:sigScriptLen]
 			seqno = unpack('<L', data[sigScriptLen:sigScriptLen + 4])[0]
 			data = data[sigScriptLen + 4:]
+			rc[0] += sigScriptLen + 4
 			inputs.append( (prevout, sigScript, seqno) )
 		self.inputs = inputs
 		
-		(outputCount, data) = varlenDecode(data)
+		(outputCount, data) = varlenDecode(data, rc)
 		outputs = []
 		for i in range(outputCount):
 			amount = unpack('<Q', data[:8])[0]
-			(pkScriptLen, data) = varlenDecode(data[8:])
+			rc[0] += 8
+			(pkScriptLen, data) = varlenDecode(data[8:], rc)
 			pkScript = data[:pkScriptLen]
 			data = data[pkScriptLen:]
+			rc[0] += pkScriptLen
 			outputs.append( (amount, pkScript) )
 		self.outputs = outputs
 		
-		assert len(data) == 4
-		self.locktime = unpack('<L', data)[0]
+		self.locktime = unpack('<L', data[:4])[0]
+		if not retExtra:
+			assert len(data) == 4
+		else:
+			assert data == self.data[rc[0]:]
+			data = data[4:]
+			rc[0] += 4
+			self.data = self.data[:rc[0]]
+			return data
 	
 	def isCoinbase(self):
 		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.input[0][0] == _nullprev
+	
+	def getCoinbase(self):
+		return self.inputs[0][1]
 	
 	def assemble(self):
 		data = pack('<L', self.version)

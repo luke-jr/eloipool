@@ -126,6 +126,8 @@ class merkleMaker(threading.Thread):
 			_makeCoinbase[1] += 1
 		rv = self.CoinbasePrefix
 		rv += pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+		# NOTE: Not using varlenEncode, since this is always guaranteed to be < 100
+		rv = bytes( (len(rv),) ) + rv
 		for v in self.CoinbaseAux.values():
 			rv += v
 		if len(rv) > 100:
@@ -208,3 +210,9 @@ class merkleMaker(threading.Thread):
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
+	
+	def getMC(self):
+		(prevBlock, bits) = self.currentBlock
+		mt = self.currentMerkleTree
+		cb = self.makeCoinbase()
+		return (None, mt, cb, prevBlock, bits)

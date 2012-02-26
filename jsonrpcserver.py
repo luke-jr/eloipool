@@ -17,6 +17,7 @@
 import asynchat
 from base64 import b64decode
 from binascii import a2b_hex, b2a_hex
+from copy import deepcopy
 from datetime import datetime
 from email.utils import formatdate
 import json
@@ -255,6 +256,53 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		share = {
 			'data': data,
 			'_origdata' : datax,
+			'username': self.Username,
+			'remoteHost': self.addr[0],
+		}
+		try:
+			self.server.receiveShare(share)
+		except RejectedShare as rej:
+			self._JSONHeaders['X-Reject-Reason'] = str(rej)
+			return False
+		return True
+	
+	getmemorypool_rv_template = {
+		'mutable': [
+			'coinbase/append',
+		],
+		'noncerange': '00000000ffffffff',
+		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+		'version': 1,
+	}
+	def doJSON_getmemorypool(self, data=None):
+		if not data is None:
+			return self.doJSON_submitblock(data)
+		
+		rv = dict(self.getmemorypool_rv_template)
+		MC = self.server.getBlockTemplate(self.Username)
+		(dummy, merkleTree, cb, prevBlock, bits) = MC
+		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
+		tl = []
+		for txn in merkleTree.data[1:]:
+			tl.append(b2a_hex(txn.data).decode('ascii'))
+		rv['transactions'] = tl
+		now = int(time())
+		rv['time'] = now
+		# FIXME: ensure mintime is always >= real mintime, both here and in share acceptance
+		rv['mintime'] = now - 180
+		rv['maxtime'] = now + 120
+		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
+		t = deepcopy(merkleTree.data[0])
+		t.setCoinbase(cb)
+		t.assemble()
+		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
+		return rv
+	
+	def doJSON_submitblock(self, data):
+		data = a2b_hex(data)
+		share = {
+			'data': data[:80],
+			'blkdata': data[80:],
 			'username': self.Username,
 			'remoteHost': self.addr[0],
 		}
