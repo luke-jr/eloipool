@@ -326,8 +326,6 @@ def checkShare(share):
 		allowed = assembleBlock(data, txlist)
 		if allowed != share['data'] + share['blkdata']:
 			raise RejectedShare('bad-txns')
-	
-	logShare(share)
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
@@ -336,9 +334,9 @@ def receiveShare(share):
 		checkShare(share)
 	except RejectedShare as rej:
 		share['rejectReason'] = str(rej)
-		logShare(share)
 		raise
-	# TODO
+	finally:
+		logShare(share)
 
 def newBlockNotification(signum, frame):
 	logging.getLogger('newBlockNotification').info('Received new block notification')
