@@ -14,27 +14,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import a2b_hex, b2a_hex
-from copy import deepcopy
 import httpserver
 import json
 import logging
-try:
-	import midstate
-	assert midstate.SHA256(b'This is just a test, ignore it. I am making it over 64-bytes long.')[:8] == (0x755f1a94, 0x999b270c, 0xf358c014, 0xfd39caeb, 0x0dcc9ebc, 0x4694cd1a, 0x8e95678e, 0x75fac450)
-except:
-	logging.getLogger('jsonrpcserver').warning('Error importing \'midstate\' module; work will not provide midstates')
-	midstate = None
 import networkserver
 import socket
-from struct import pack
 from time import time
 import traceback
-from util import RejectedShare, swap32
 
 WithinLongpoll = httpserver.AsyncRequest
 
-_CheckForDupesHACK = {}
 class JSONRPCHandler(httpserver.HTTPHandler):
 	default_quirks = {
 		'NELH': None,  # FIXME: identify which clients have a problem with this
@@ -182,105 +171,6 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			return self.doError(r'Error encoding reply in JSON')
 		rv = rv.encode('utf8')
 		return self.sendReply(200, rv, headers=self._JSONHeaders)
-	
-	getwork_rv_template = {
-		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
-		'target': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000',
-		'hash1': '00000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000010000',
-	}
-	def doJSON_getwork(self, data=None):
-		if not data is None:
-			return self.doJSON_submitwork(data)
-		rv = dict(self.getwork_rv_template)
-		hdr = self.server.getBlockHeader(self.Username)
-		
-		# FIXME: this assumption breaks with internal rollntime
-		# NOTE: noncerange needs to set nonce to start value at least
-		global _CheckForDupesHACK
-		uhdr = hdr[:68] + hdr[72:]
-		if uhdr in _CheckForDupesHACK:
-			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
-		_CheckForDupesHACK[uhdr] = None
-		
-		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
-		# TODO: endian shuffle etc
-		rv['data'] = data
-		if midstate and 'midstate' not in self.extensions:
-			h = midstate.SHA256(hdr)[:8]
-			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
-		return rv
-	
-	def doJSON_submitwork(self, datax):
-		data = swap32(a2b_hex(datax))[:80]
-		share = {
-			'data': data,
-			'_origdata' : datax,
-			'username': self.Username,
-			'remoteHost': self.addr[0],
-		}
-		try:
-			self.server.receiveShare(share)
-		except RejectedShare as rej:
-			self._JSONHeaders['X-Reject-Reason'] = str(rej)
-			return False
-		return True
-	
-	getmemorypool_rv_template = {
-		'mutable': [
-			'coinbase/append',
-		],
-		'noncerange': '00000000ffffffff',
-		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-		'version': 1,
-	}
-	def doJSON_getmemorypool(self, data=None):
-		if not data is None:
-			return self.doJSON_submitblock(data)
-		
-		rv = dict(self.getmemorypool_rv_template)
-		MC = self.server.getBlockTemplate(self.Username)
-		(dummy, merkleTree, cb, prevBlock, bits) = MC
-		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
-		tl = []
-		for txn in merkleTree.data[1:]:
-			tl.append(b2a_hex(txn.data).decode('ascii'))
-		rv['transactions'] = tl
-		now = int(time())
-		rv['time'] = now
-		# FIXME: ensure mintime is always >= real mintime, both here and in share acceptance
-		rv['mintime'] = now - 180
-		rv['maxtime'] = now + 120
-		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
-		t = deepcopy(merkleTree.data[0])
-		t.setCoinbase(cb)
-		t.assemble()
-		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
-		return rv
-	
-	def doJSON_submitblock(self, data):
-		data = a2b_hex(data)
-		share = {
-			'data': data[:80],
-			'blkdata': data[80:],
-			'username': self.Username,
-			'remoteHost': self.addr[0],
-		}
-		try:
-			self.server.receiveShare(share)
-		except RejectedShare as rej:
-			self._JSONHeaders['X-Reject-Reason'] = str(rej)
-			return False
-		return True
-	
-	def doJSON_setworkaux(self, k, hexv = None):
-		if self.Username != self.server.SecretUser:
-			self.doAuthenticate()
-			return None
-		if hexv:
-			self.server.aux[k] = a2b_hex(hexv)
-		else:
-			del self.server.aux[k]
-		return True
 	
 	def handle_close(self):
 		self.cleanupLP()
