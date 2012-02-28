@@ -31,7 +31,7 @@ def makeMRD():
 	prevBlock = a2b_hex(mp['previousblockhash'])[::-1]
 	bits = a2b_hex(mp['bits'])[::-1]
 	rollPrevBlk = False
-	MRD = (merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk)
+	MRD = (merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp)
 	if 'coinbase/append' in mp.get('mutable', ()):
 		currentwork[:] = (MRD, time(), 0)
 	else:
@@ -46,7 +46,7 @@ def getMRD():
 		MRD = currentwork[0]
 		currentwork[2] += 1
 	
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp) = MRD
 	cbtxn = merkleTree.data[0]
 	coinbase = cbtxn.originalCB + pack('>Q', currentwork[2]).lstrip(b'\0')
 	if len(coinbase) > 100:
@@ -57,12 +57,12 @@ def getMRD():
 	cbtxn.setCoinbase(coinbase)
 	cbtxn.assemble()
 	merkleRoot = merkleTree.merkleRoot()
-	MRD = (merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk)
+	MRD = (merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp)
 	return MRD
 
 def MakeWork(username):
 	MRD = getMRD()
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp) = MRD
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'ppmg'
 	worklog[hdr[4:68]] = (MRD, time())
@@ -74,7 +74,7 @@ def SubmitShare(share):
 	if k not in worklog:
 		raise RejectedShare('LOCAL unknown-work')
 	(MRD, issueT) = worklog[k]
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp) = MRD
 	cbtxn = merkleTree.data[0]
 	cbtxn.setCoinbase(coinbase)
 	cbtxn.assemble()
@@ -82,7 +82,10 @@ def SubmitShare(share):
 	for txn in merkleTree.data:
 		blkdata += txn.data
 	data = b2a_hex(hdr + blkdata).decode('utf8')
-	if not pool.submitblock(data):
+	a = [data]
+	if 'workid' in mp:
+		a.append({'workid': mp['workid']})
+	if not pool.submitblock(*a):
 		currentwork[1] = 0
 		raise RejectedShare('pool-rejected')
 
