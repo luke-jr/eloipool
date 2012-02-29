@@ -10,8 +10,10 @@ import jsonrpc
 import jsonrpcserver
 import jsonrpc_getwork
 import merkletree
+import socket
 from struct import pack
 import sys
+import threading
 from time import time
 from util import RejectedShare
 
@@ -20,8 +22,7 @@ pool = jsonrpc.ServiceProxy(sys.argv[1])
 worklog = {}
 currentwork = [None, 0, 0]
 
-def makeMRD():
-	mp = pool.getmemorypool()
+def makeMRD(mp):
 	coinbase = a2b_hex(mp['coinbasetxn'])
 	cbtxn = bitcoin.txn.Txn(coinbase)
 	cbtxn.disassemble()
@@ -42,7 +43,8 @@ def makeMRD():
 def getMRD():
 	now = time()
 	if currentwork[1] < now - 45:
-		MRD = makeMRD()
+		mp = pool.getmemorypool()
+		MRD = makeMRD(mp)
 	else:
 		MRD = currentwork[0]
 		currentwork[2] += 1
@@ -89,6 +91,32 @@ def SubmitShare(share):
 	if not pool.submitblock(*a):
 		currentwork[1] = 0
 		raise RejectedShare('pool-rejected')
+
+def HandleLP():
+	global server
+	
+	# FIXME: get path from header!
+	pool = jsonrpc.ServiceProxy(sys.argv[1].rstrip('/') + '/LP')
+	while True:
+		try:
+			mp = pool.getmemorypool()
+			break
+		except socket.timeout:
+			pass
+	makeMRD(mp)
+	server.wakeLongpoll()
+
+LPThread = None
+LPTrackReal = jsonrpcserver.JSONRPCHandler.LPTrack
+class LPHook:
+	def LPTrack(self):
+		global LPThread
+		if LPThread is None or not LPThread.is_alive():
+			LPThread = threading.Thread(target=HandleLP)
+			LPThread.daemon = True
+			LPThread.start()
+		return LPTrackReal(self)
+jsonrpcserver.JSONRPCHandler.LPTrack = LPHook.LPTrack
 
 server = jsonrpcserver.JSONRPCServer()
 server.getBlockHeader = MakeWork
