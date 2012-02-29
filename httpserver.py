@@ -69,7 +69,7 @@ class HTTPHandler(networkserver.SocketHandler):
 		if len(value) != 2 or value[0] != b'Basic':
 			return self.doError('Bad Authorization header')
 		value = b64decode(value[1])
-		(un, pw) = value.split(b':', 1)
+		(un, pw, *x) = value.split(b':', 1) + [None]
 		valid = False
 		try:
 			valid = self.checkAuthentication(un, pw)
