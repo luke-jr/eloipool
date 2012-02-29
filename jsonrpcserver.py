@@ -24,6 +24,10 @@ import traceback
 
 WithinLongpoll = httpserver.AsyncRequest
 
+class _SentJSONError(BaseException):
+	def __init__(self, rv):
+		self.rv = rv
+
 class JSONRPCHandler(httpserver.HTTPHandler):
 	default_quirks = {
 		'NELH': None,  # FIXME: identify which clients have a problem with this
@@ -45,10 +49,15 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			headers.setdefault('Content-Type', 'application/json')
 		return super().sendReply(status, body, headers)
 	
-	def doError(self, reason = '', code = 100):
+	def fmtError(self, reason = '', code = 100):
 		reason = json.dumps(reason)
 		reason = r'{"result":null,"id":null,"error":{"name":"JSONRPCError","code":%d,"message":%s}}' % (code, reason)
-		return self.sendReply(500, reason.encode('utf8'))
+		reason = reason.encode('utf8')
+		return reason
+	
+	def doError(self, reason = '', code = 100):
+		reason = self.fmtError(reason, code)
+		return self.sendReply(500, reason)
 	
 	def checkAuthentication(self, un, pw):
 		return bool(un)
@@ -71,10 +80,11 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def doHeader_x_mining_extensions(self, value):
 		self.extensions = value.decode('ascii').lower().split(' ')
 	
-	def doLongpoll(self):
+	def doLongpoll(self, *a):
 		timeNow = time()
 		
 		self._LP = True
+		self._LPCall = a
 		if 'NELH' not in self.quirks:
 			# [NOT No] Early Longpoll Headers
 			self.sendReply(200, body=None, headers=self.LPHeaders)
@@ -128,11 +138,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		
 		self.LPUntrack()
 		
-		rv = self.doJSON_getwork()
-		rv['submitold'] = True
-		rv = {'id': 1, 'error': None, 'result': rv}
-		rv = json.dumps(rv)
-		rv = rv.encode('utf8')
+		rv = self._doJSON_i(*self._LPCall, longpoll=True)
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
@@ -141,9 +147,34 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		
 		self.reset_request()
 	
-	def doJSON(self, data):
+	def _doJSON_i(self, reqid, method, params, longpoll = False):
+		try:
+			rv = getattr(self, method)(*params)
+		except Exception as e:
+			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
+			efun = self.fmtError if longpoll else self.doError
+			return efun(r'Service error: %s' % (e,))
+		if rv is None:
+			# response was already sent (eg, authentication request)
+			return
+		try:
+			rv.setdefault('submitold', True)
+		except:
+			pass
+		rv = {'id': reqid, 'error': None, 'result': rv}
+		try:
+			rv = json.dumps(rv)
+		except:
+			efun = self.fmtError if longpoll else self.doError
+			return efun(r'Error encoding reply in JSON')
+		rv = rv.encode('utf8')
+		return rv if longpoll else self.sendReply(200, rv, headers=self._JSONHeaders)
+	
+	def doJSON(self, data, longpoll = False):
 		# TODO: handle JSON errors
 		data = data.decode('utf8')
+		if longpoll and not data:
+			return self.doLongpoll(1, 'doJSON_getwork', ())
 		try:
 			data = json.loads(data)
 			method = 'doJSON_' + str(data['method']).lower()
@@ -156,21 +187,10 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
 		params = data.setdefault('params', ())
-		try:
-			rv = getattr(self, method)(*tuple(data['params']))
-		except Exception as e:
-			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
-			return self.doError(r'Service error: %s' % (e,))
-		if rv is None:
-			# response was already sent (eg, authentication request)
-			return
-		rv = {'id': data['id'], 'error': None, 'result': rv}
-		try:
-			rv = json.dumps(rv)
-		except:
-			return self.doError(r'Error encoding reply in JSON')
-		rv = rv.encode('utf8')
-		return self.sendReply(200, rv, headers=self._JSONHeaders)
+		procfun = self._doJSON_i
+		if longpoll and not params:
+			procfun = self.doLongpoll
+		return procfun(data['id'], method, params)
 	
 	def handle_close(self):
 		self.cleanupLP()
@@ -184,10 +204,8 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if not self.path in (b'/', b'/LP', b'/LP/'):
 			return self.sendReply(404)
 		try:
-			if self.path[:3] == b'/LP':
-				return self.doLongpoll()
 			data = b''.join(self.incoming)
-			return self.doJSON(data)
+			return self.doJSON(data, self.path[:3] == b'/LP')
 		except socket.error:
 			raise
 		except WithinLongpoll:
