@@ -76,7 +76,7 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 	return txn
 
 
-import jsonrpcserver
+import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
@@ -91,7 +91,7 @@ def updateBlocks():
 def blockChanged():
 	global DupeShareHACK
 	DupeShareHACK = {}
-	jsonrpcserver._CheckForDupesHACK = {}
+	jsonrpc_getwork._CheckForDupesHACK = {}
 	global MM, networkTarget, server
 	networkTarget = Bits2Target(MM.currentBlock[1])
 	workLog.clear()
@@ -475,6 +475,10 @@ if __name__ == "__main__":
 	
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
+	
+	import jsonrpc_getmemorypool
+	import jsonrpc_getwork
+	import jsonrpc_setworkaux
 	
 	server = JSONRPCServer()
 	if hasattr(config, 'JSONRPCAddress'):

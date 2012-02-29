@@ -14,42 +14,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import asynchat
-from base64 import b64decode
-from binascii import a2b_hex, b2a_hex
-from copy import deepcopy
-from datetime import datetime
-from email.utils import formatdate
+import httpserver
 import json
 import logging
-try:
-	import midstate
-	assert midstate.SHA256(b'This is just a test, ignore it. I am making it over 64-bytes long.')[:8] == (0x755f1a94, 0x999b270c, 0xf358c014, 0xfd39caeb, 0x0dcc9ebc, 0x4694cd1a, 0x8e95678e, 0x75fac450)
-except:
-	logging.getLogger('jsonrpcserver').warning('Error importing \'midstate\' module; work will not provide midstates')
-	midstate = None
 import networkserver
-import os
-import re
 import socket
-from struct import pack
-import threading
-from time import mktime, time, sleep
+from time import time
 import traceback
-from util import RejectedShare, swap32
 
-class WithinLongpoll(BaseException):
-	pass
+WithinLongpoll = httpserver.AsyncRequest
 
-# TODO: keepalive/close
-_CheckForDupesHACK = {}
-class JSONRPCHandler(networkserver.SocketHandler):
-	HTTPStatus = {
-		200: 'OK',
-		401: 'Unauthorized',
-		404: 'Not Found',
-		405: 'Method Not Allowed',
-		500: 'Internal Server Error',
+class _SentJSONError(BaseException):
+	def __init__(self, rv):
+		self.rv = rv
+
+class JSONRPCHandler(httpserver.HTTPHandler):
+	default_quirks = {
+		'NELH': None,  # FIXME: identify which clients have a problem with this
 	}
 	
 	LPHeaders = {
@@ -59,48 +40,27 @@ class JSONRPCHandler(networkserver.SocketHandler):
 	logger = logging.getLogger('JSONRPCHandler')
 	
 	def sendReply(self, status=200, body=b'', headers=None):
-		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
-		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
-		headers.setdefault('Server', 'Eloipool')
-		if body is None:
-			headers.setdefault('Transfer-Encoding', 'chunked')
-			body = b''
-		else:
-			headers['Content-Length'] = len(body)
 		if status == 200:
 			headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
 			headers.setdefault('X-Roll-NTime', 'expire=120')
 		elif body and body[0] == 123:  # b'{'
 			headers.setdefault('Content-Type', 'application/json')
-		for k, v in headers.items():
-			if v is None: continue
-			buf += "%s: %s\r\n" % (k, v)
-		buf += "\r\n"
-		buf = buf.encode('utf8')
-		buf += body
-		self.push(buf)
+		return super().sendReply(status, body, headers)
 	
-	def doError(self, reason = '', code = 100):
+	def fmtError(self, reason = '', code = 100):
 		reason = json.dumps(reason)
 		reason = r'{"result":null,"id":null,"error":{"name":"JSONRPCError","code":%d,"message":%s}}' % (code, reason)
-		return self.sendReply(500, reason.encode('utf8'))
+		reason = reason.encode('utf8')
+		return reason
 	
-	def doHeader_authorization(self, value):
-		value = value.split(b' ')
-		if len(value) != 2 or value[0] != b'Basic':
-			return self.doError('Bad Authorization header')
-		value = b64decode(value[1])
-		value = value.split(b':')[0]
-		self.Username = value.decode('utf8')
+	def doError(self, reason = '', code = 100):
+		reason = self.fmtError(reason, code)
+		return self.sendReply(500, reason)
 	
-	def doHeader_connection(self, value):
-		if value == b'close':
-			self.quirks['close'] = None
-	
-	def doHeader_content_length(self, value):
-		self.CL = int(value)
+	def checkAuthentication(self, un, pw):
+		return bool(un)
 	
 	def doHeader_user_agent(self, value):
 		self.reqinfo['UA'] = value
@@ -120,13 +80,11 @@ class JSONRPCHandler(networkserver.SocketHandler):
 	def doHeader_x_mining_extensions(self, value):
 		self.extensions = value.decode('ascii').lower().split(' ')
 	
-	def doAuthenticate(self):
-		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
-	
-	def doLongpoll(self):
+	def doLongpoll(self, *a):
 		timeNow = time()
 		
 		self._LP = True
+		self._LPCall = a
 		if 'NELH' not in self.quirks:
 			# [NOT No] Early Longpoll Headers
 			self.sendReply(200, body=None, headers=self.LPHeaders)
@@ -180,11 +138,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		
 		self.LPUntrack()
 		
-		rv = self.doJSON_getwork()
-		rv['submitold'] = True
-		rv = {'id': 1, 'error': None, 'result': rv}
-		rv = json.dumps(rv)
-		rv = rv.encode('utf8')
+		rv = self._doJSON_i(*self._LPCall, longpoll=True)
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
@@ -193,9 +147,34 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		
 		self.reset_request()
 	
-	def doJSON(self, data):
+	def _doJSON_i(self, reqid, method, params, longpoll = False):
+		try:
+			rv = getattr(self, method)(*params)
+		except Exception as e:
+			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
+			efun = self.fmtError if longpoll else self.doError
+			return efun(r'Service error: %s' % (e,))
+		if rv is None:
+			# response was already sent (eg, authentication request)
+			return
+		try:
+			rv.setdefault('submitold', True)
+		except:
+			pass
+		rv = {'id': reqid, 'error': None, 'result': rv}
+		try:
+			rv = json.dumps(rv)
+		except:
+			efun = self.fmtError if longpoll else self.doError
+			return efun(r'Error encoding reply in JSON')
+		rv = rv.encode('utf8')
+		return rv if longpoll else self.sendReply(200, rv, headers=self._JSONHeaders)
+	
+	def doJSON(self, data, longpoll = False):
 		# TODO: handle JSON errors
 		data = data.decode('utf8')
+		if longpoll and not data:
+			return self.doLongpoll(1, 'doJSON_getwork', ())
 		try:
 			data = json.loads(data)
 			method = 'doJSON_' + str(data['method']).lower()
@@ -208,120 +187,10 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		# TODO: handle errors as JSON-RPC
 		self._JSONHeaders = {}
 		params = data.setdefault('params', ())
-		try:
-			rv = getattr(self, method)(*tuple(data['params']))
-		except Exception as e:
-			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
-			return self.doError(r'Service error: %s' % (e,))
-		if rv is None:
-			# response was already sent (eg, authentication request)
-			return
-		rv = {'id': data['id'], 'error': None, 'result': rv}
-		try:
-			rv = json.dumps(rv)
-		except:
-			return self.doError(r'Error encoding reply in JSON')
-		rv = rv.encode('utf8')
-		return self.sendReply(200, rv, headers=self._JSONHeaders)
-	
-	getwork_rv_template = {
-		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
-		'target': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000',
-		'hash1': '00000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000010000',
-	}
-	def doJSON_getwork(self, data=None):
-		if not data is None:
-			return self.doJSON_submitwork(data)
-		rv = dict(self.getwork_rv_template)
-		hdr = self.server.getBlockHeader(self.Username)
-		
-		# FIXME: this assumption breaks with internal rollntime
-		# NOTE: noncerange needs to set nonce to start value at least
-		global _CheckForDupesHACK
-		uhdr = hdr[:68] + hdr[72:]
-		if uhdr in _CheckForDupesHACK:
-			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
-		_CheckForDupesHACK[uhdr] = None
-		
-		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
-		# TODO: endian shuffle etc
-		rv['data'] = data
-		if midstate and 'midstate' not in self.extensions:
-			h = midstate.SHA256(hdr)[:8]
-			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
-		return rv
-	
-	def doJSON_submitwork(self, datax):
-		data = swap32(a2b_hex(datax))[:80]
-		share = {
-			'data': data,
-			'_origdata' : datax,
-			'username': self.Username,
-			'remoteHost': self.addr[0],
-		}
-		try:
-			self.server.receiveShare(share)
-		except RejectedShare as rej:
-			self._JSONHeaders['X-Reject-Reason'] = str(rej)
-			return False
-		return True
-	
-	getmemorypool_rv_template = {
-		'mutable': [
-			'coinbase/append',
-		],
-		'noncerange': '00000000ffffffff',
-		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-		'version': 1,
-	}
-	def doJSON_getmemorypool(self, data=None):
-		if not data is None:
-			return self.doJSON_submitblock(data)
-		
-		rv = dict(self.getmemorypool_rv_template)
-		MC = self.server.getBlockTemplate(self.Username)
-		(dummy, merkleTree, cb, prevBlock, bits) = MC
-		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
-		tl = []
-		for txn in merkleTree.data[1:]:
-			tl.append(b2a_hex(txn.data).decode('ascii'))
-		rv['transactions'] = tl
-		now = int(time())
-		rv['time'] = now
-		# FIXME: ensure mintime is always >= real mintime, both here and in share acceptance
-		rv['mintime'] = now - 180
-		rv['maxtime'] = now + 120
-		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
-		t = deepcopy(merkleTree.data[0])
-		t.setCoinbase(cb)
-		t.assemble()
-		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
-		return rv
-	
-	def doJSON_submitblock(self, data):
-		data = a2b_hex(data)
-		share = {
-			'data': data[:80],
-			'blkdata': data[80:],
-			'username': self.Username,
-			'remoteHost': self.addr[0],
-		}
-		try:
-			self.server.receiveShare(share)
-		except RejectedShare as rej:
-			self._JSONHeaders['X-Reject-Reason'] = str(rej)
-			return False
-		return True
-	
-	def doJSON_setworkaux(self, k, hexv = None):
-		if self.Username != self.server.SecretUser:
-			self.doAuthenticate()
-			return None
-		if hexv:
-			self.server.aux[k] = a2b_hex(hexv)
-		else:
-			del self.server.aux[k]
-		return True
+		procfun = self._doJSON_i
+		if longpoll and not params:
+			procfun = self.doLongpoll
+		return procfun(data['id'], method, params)
 	
 	def handle_close(self):
 		self.cleanupLP()
@@ -335,10 +204,8 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		if not self.path in (b'/', b'/LP', b'/LP/'):
 			return self.sendReply(404)
 		try:
-			if self.path[:3] == b'/LP':
-				return self.doLongpoll()
 			data = b''.join(self.incoming)
-			return self.doJSON(data)
+			return self.doJSON(data, self.path[:3] == b'/LP')
 		except socket.error:
 			raise
 		except WithinLongpoll:
@@ -347,145 +214,10 @@ class JSONRPCHandler(networkserver.SocketHandler):
 			self.logger.error(traceback.format_exc())
 			return self.doError('uncaught error')
 	
-	def parse_headers(self, hs):
-		self.CL = None
-		self.Username = None
-		self.method = None
-		self.path = None
-		hs = re.split(br'\r?\n', hs)
-		data = hs.pop(0).split(b' ')
-		try:
-			self.method = data[0]
-			self.path = data[1]
-		except IndexError:
-			self.close()
-			return
-		self.extensions = []
-		self.reqinfo = {}
-		self.quirks = {}
-		if data[2:] != [b'HTTP/1.1']:
-			self.quirks['close'] = None
-		self.quirks['NELH'] = None  # FIXME: identify which clients have a problem with this
-		while True:
-			try:
-				data = hs.pop(0)
-			except IndexError:
-				break
-			data = tuple(map(lambda a: a.strip(), data.split(b':', 1)))
-			method = 'doHeader_' + data[0].decode('ascii').lower()
-			if hasattr(self, method):
-				getattr(self, method)(data[1])
-	
-	def found_terminator(self):
-		if self.reading_headers:
-			inbuf = b"".join(self.incoming)
-			self.incoming = []
-			m = re.match(br'^[\r\n]+', inbuf)
-			if m:
-				inbuf = inbuf[len(m.group(0)):]
-			if not inbuf:
-				return
-			
-			self.reading_headers = False
-			self.parse_headers(inbuf)
-			if self.CL:
-				self.set_terminator(self.CL)
-				return
-		
-		self.set_terminator(None)
-		try:
-			self.handle_request()
-			self.reset_request()
-		except WithinLongpoll:
-			pass
-	
-	def handle_error(self):
-		self.logger.debug(traceback.format_exc())
-		self.handle_close()
-	
-	get_terminator = asynchat.async_chat.get_terminator
-	set_terminator = asynchat.async_chat.set_terminator
-	
-	def handle_readbuf(self):
-		while self.ac_in_buffer:
-			lb = len(self.ac_in_buffer)
-			terminator = self.get_terminator()
-			if not terminator:
-				# no terminator, collect it all
-				self.collect_incoming_data (self.ac_in_buffer)
-				self.ac_in_buffer = b''
-			elif isinstance(terminator, int):
-				# numeric terminator
-				n = terminator
-				if lb < n:
-					self.collect_incoming_data (self.ac_in_buffer)
-					self.ac_in_buffer = b''
-					self.terminator = self.terminator - lb
-				else:
-					self.collect_incoming_data (self.ac_in_buffer[:n])
-					self.ac_in_buffer = self.ac_in_buffer[n:]
-					self.terminator = 0
-					self.found_terminator()
-			else:
-				# 3 cases:
-				# 1) end of buffer matches terminator exactly:
-				#    collect data, transition
-				# 2) end of buffer matches some prefix:
-				#    collect data to the prefix
-				# 3) end of buffer does not match any prefix:
-				#    collect data
-				# NOTE: this supports multiple different terminators, but
-				#       NOT ones that are prefixes of others...
-				if isinstance(self.ac_in_buffer, type(terminator)):
-					terminator = (terminator,)
-				termidx = tuple(map(self.ac_in_buffer.find, terminator))
-				try:
-					index = min(x for x in termidx if x >= 0)
-				except ValueError:
-					index = -1
-				if index != -1:
-					# we found the terminator
-					if index > 0:
-						# don't bother reporting the empty string (source of subtle bugs)
-						self.collect_incoming_data (self.ac_in_buffer[:index])
-					specific_terminator = terminator[termidx.index(index)]
-					terminator_len = len(specific_terminator)
-					self.ac_in_buffer = self.ac_in_buffer[index+terminator_len:]
-					# This does the Right Thing if the terminator is changed here.
-					self.found_terminator()
-				else:
-					# check for a prefix of the terminator
-					termidx = tuple(map(lambda a: asynchat.find_prefix_at_end (self.ac_in_buffer, a), terminator))
-					index = max(termidx)
-					if index:
-						if index != lb:
-							# we found a prefix, collect up to the prefix
-							self.collect_incoming_data (self.ac_in_buffer[:-index])
-							self.ac_in_buffer = self.ac_in_buffer[-index:]
-						break
-					else:
-						# no prefix, collect it all
-						self.collect_incoming_data (self.ac_in_buffer)
-						self.ac_in_buffer = b''
-	
 	def reset_request(self):
-		self.incoming = []
-		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
-		self.reading_headers = True
 		self._LP = False
-		self.changeTask(self.handle_timeout, time() + 150)
-		if 'close' in self.quirks:
-			self.close()
+		super().reset_request()
 	
-	def collect_incoming_data(self, data):
-		asynchat.async_chat._collect_incoming_data(self, data)
-	
-	def __init__(self, *a, **ka):
-		super().__init__(*a, **ka)
-		self.quirks = {}
-		self.reset_request()
-	
-setattr(JSONRPCHandler, 'doHeader_content-length', JSONRPCHandler.doHeader_content_length);
 setattr(JSONRPCHandler, 'doHeader_user-agent', JSONRPCHandler.doHeader_user_agent);
 setattr(JSONRPCHandler, 'doHeader_x-minimum-wait', JSONRPCHandler.doHeader_x_minimum_wait);
 setattr(JSONRPCHandler, 'doHeader_x-mining-extensions', JSONRPCHandler.doHeader_x_mining_extensions);

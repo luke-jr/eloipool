@@ -104,6 +104,13 @@ class SocketHandler:
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
 		self.changeTask(self.handle_timeout, time() + 15)
+	
+	@classmethod
+	def _register(cls, scls):
+		for a in dir(scls):
+			if a[0] == '_':
+				continue
+			setattr(cls, a, getattr(scls, a))
 
 class NetworkListener:
 	logger = logging.getLogger('SocketListener')
