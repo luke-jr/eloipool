@@ -8,6 +8,7 @@ import bitcoin.txn
 import bitcoin.varlen
 import jsonrpc
 import jsonrpcserver
+import jsonrpc_getwork
 import merkletree
 from struct import pack
 import sys
