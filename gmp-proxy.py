@@ -95,7 +95,7 @@ def SubmitShare(share):
 def HandleLP():
 	global server
 	
-	# FIXME: get path from header!
+	# FIXME: get path from gmp!
 	pool = jsonrpc.ServiceProxy(sys.argv[1].rstrip('/') + '/LP')
 	while True:
 		try:

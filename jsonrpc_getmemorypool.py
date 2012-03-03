@@ -22,6 +22,7 @@ from util import RejectedShare
 
 class _getmemorypool:
 	getmemorypool_rv_template = {
+		'longpoll': '/LP',
 		'mutable': [
 			'coinbase/append',
 		],
