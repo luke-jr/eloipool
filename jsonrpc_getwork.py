@@ -50,7 +50,7 @@ class _getwork:
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc
 		rv['data'] = data
-		if midstate and 'midstate' not in self.extensions:
+		if midstate and 'midstate' not in self.extensions and 'midstate' not in self.quirks:
 			h = midstate.SHA256(hdr)[:8]
 			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
 		return rv

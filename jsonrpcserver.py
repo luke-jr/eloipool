@@ -62,17 +62,21 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def checkAuthentication(self, un, pw):
 		return bool(un)
 	
+	_MidstateNotAdv = (b'phoenix', b'poclbm', b'gminor')
 	def doHeader_user_agent(self, value):
 		self.reqinfo['UA'] = value
 		quirks = self.quirks
+		(UA, v, *x) = value.split(b'/', 1) + [None]
 		try:
-			if value[:9] == b'phoenix/v':
-				v = tuple(map(int, value[9:].split(b'.')))
-				if v[0] < 2 and v[1] < 8 and v[2] < 1:
-					quirks['NELH'] = None
+			if v[0] == b'v': v = v[1:]
+			v = tuple(map(int, v.split(b'.'))) + (0,0,0)
 		except:
 			pass
-		self.quirks = quirks
+		if UA in self._MidstateNotAdv:
+			quirks['midstate'] = None
+			if UA == b'phoenix':
+				if v[0] < 2 and v[1] < 8 and v[2] < 1:
+					quirks['NELH'] = None
 	
 	def doHeader_x_minimum_wait(self, value):
 		self.reqinfo['MinWait'] = int(value)
