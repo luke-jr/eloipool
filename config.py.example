@@ -63,7 +63,7 @@ BitcoinNodeAddresses = (
 # Logging of shares:
 ShareLogging = (
 	{
-		'type': 'file',
+		'type': 'logfile',
 		'filename': 'share-logfile',
 	},
 	{
