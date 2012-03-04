@@ -128,11 +128,6 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-db = None
-if hasattr(config, 'DbOptions'):
-	import psycopg2
-	db = psycopg2.connect(**config.DbOptions)
-
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
@@ -453,6 +448,11 @@ import sharelogging
 import imp
 
 if __name__ == "__main__":
+	if not hasattr(config, 'shareLogging'):
+		config.shareLogging = ()
+	if hasattr(config, 'DbOptions'):
+		config.shareLogging = list(config.shareLogging)
+		config.shareLogging.append( ('postgres', config.DbOptions) )
 	for i in config.shareLogging:
 		name, parameters = i
 		try:
