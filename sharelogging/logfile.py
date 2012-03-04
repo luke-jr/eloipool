@@ -28,7 +28,7 @@ _logger = logging.getLogger('logshares_files')
 
 def YN(b):
 	if b is None:
-		return 'N'
+		return '-'
 	return 'Y' if b else 'N'
 
 
