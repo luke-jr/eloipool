@@ -452,9 +452,34 @@ if __name__ == "__main__":
 		config.ShareLogging = ()
 	if hasattr(config, 'DbOptions'):
 		config.ShareLogging = list(config.ShareLogging)
-		config.ShareLogging.append( ('postgres', config.DbOptions) )
+		config.ShareLogging.append( {
+			'type': 'sql',
+			'engine': 'postgres',
+			'dbopts': config.DbOptions,
+		} )
 	for i in config.ShareLogging:
-		name, parameters = i
+		if not hasattr(i, 'keys'):
+			name, parameters = i
+			logging.getLogger('backwardCompatibility').warn('Using short-term backward compatibility for ShareLogging[\'%s\']; be sure to update config before 2012-04-04' % (name,))
+			if name == 'postgres':
+				name = 'sql'
+				i = {
+					'engine': 'postgres',
+					'dbopts': parameters,
+				}
+			elif name == 'logfile':
+				i = {}
+				i['thropts'] = parameters
+				if 'filename' in parameters:
+					i['filename'] = parameters['filename']
+					i['thropts'] = dict(i['thropts'])
+					del i['thropts']['filename']
+			else:
+				i = parameters
+			i['type'] = name
+		
+		name = i['type']
+		parameters = i
 		try:
 			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
 			m = imp.load_module(name, fp, pathname, description)

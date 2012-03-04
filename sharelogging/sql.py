@@ -14,12 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import psycopg2
 from util import YN
 
-class postgres:
-	def __init__(self, *a, **ka):
-		self.db = psycopg2.connect(*a, **ka)
+class sql:
+	def __init__(self, **ka):
+		self.opts = ka
+		dbe = ka['engine']
+		getattr(self, 'setup_%s' % (dbe,))()
+	
+	def setup_postgres(self, **ka):
+		import psycopg2
+		self.db = psycopg2.connect(**self.opts.get('dbopts', {}))
 	
 	def logShare(self, share):
 		dbc = self.db.cursor()

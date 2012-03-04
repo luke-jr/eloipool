@@ -62,8 +62,19 @@ BitcoinNodeAddresses = (
 
 # Logging of shares:
 ShareLogging = (
-    ('logfile', {
-		'filename': 'share-logfile'
-	}),
+	{
+		'type': 'file',
+		'filename': 'share-logfile',
+	},
+	{
+		'type': 'sql',
+		'engine': 'postgres',
+		'dbopts': {
+			'host': 'localhost',
+			'database': 'pooldb',
+			'user': 'eloipool',
+			'password': 'somethingsecret',
+		},
+	},
 )
 

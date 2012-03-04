@@ -28,8 +28,8 @@ import traceback
 _logger = logging.getLogger('sharelogging.logfile')
 
 class logfile(threading.Thread):
-	def __init__(self, filename, *a, **k):
-		super().__init__(*a, **k)
+	def __init__(self, filename, **ka):
+		super().__init__(**ka.get('thropts', {}))
 		self.fn=filename
 		self.queue = deque()
 		self.start()
