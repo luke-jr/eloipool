@@ -63,7 +63,7 @@ def logShare(share):
 	address = share.get('remoteHost','?')
 	username = share['username']
 	ourresult = YN(not share.get('rejectReason', None))
-	upstreamresult = YN(share.get('upstreamResult', None))
+	upstreamresult = YN(share.get('upstreamResult', None)) or '-'
 	reason = share.get('rejectReason','-')
 	solution = share['solution']
 	

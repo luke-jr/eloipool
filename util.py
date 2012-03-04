@@ -20,7 +20,7 @@ import traceback
 
 def YN(b):
 	if b is None:
-		return 'N'
+		return None
 	return 'Y' if b else 'N'
 
 def dblsha(b):
