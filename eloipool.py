@@ -461,7 +461,7 @@ if __name__ == "__main__":
 			lo = getattr(m, name)(**parameters)
 			loggersShare.append(lo.logShare)
 		except:
-			logging.getLogger('logging').warn("error setting up logger %s: %s",name,  sys.exc_info())
+			logging.getLogger('sharelogging').warn("Error setting up share logger %s: %s", name,  sys.exc_info())
 
 	LSbc = []
 	if not hasattr(config, 'BitcoinNodeAddresses'):

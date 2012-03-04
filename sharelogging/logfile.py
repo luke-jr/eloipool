@@ -25,7 +25,7 @@ from util import YN
 import logging
 import traceback
 
-_logger = logging.getLogger('logshares_files')
+_logger = logging.getLogger('sharelogging.logfile')
 
 class logfile(threading.Thread):
 	def __init__(self, filename, *a, **k):
