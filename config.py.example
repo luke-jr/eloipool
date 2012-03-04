@@ -59,3 +59,10 @@ JSONRPCAddresses = (
 BitcoinNodeAddresses = (
 	('', 8338),
 )
+
+
+# Loging of shares:
+shareLogging = (
+    ('logfile', 'share-logfile'),
+)
+
