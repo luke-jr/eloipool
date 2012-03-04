@@ -27,11 +27,12 @@ import traceback
 
 _logger = logging.getLogger('logshares_files')
 
-class _writeshares(threading.Thread):
+class logfile(threading.Thread):
 	def __init__(self, filename, *a, **k):
 		super().__init__(*a, **k)
 		self.fn=filename
 		self.queue = deque()
+		self.start()
 	
 	def queueshare(self, line):
 		self.queue.append(line)
@@ -49,25 +50,15 @@ class _writeshares(threading.Thread):
 				self.flushlog()
 			except:
 				_logger.critical(traceback.format_exc())
-
-sharewriter = None
-
-def setup(filename):
-	global sharewriter
-	sharewriter = _writeshares(filename)
-	sharewriter.start()
-
-def logShare(share):
-	global sharewriter
-	timestamp = time()
-	address = share.get('remoteHost','?')
-	username = share['username']
-	ourresult = YN(not share.get('rejectReason', None))
-	upstreamresult = YN(share.get('upstreamResult', None))
-	reason = share.get('rejectReason','-')
-	solution = share['solution']
 	
-	logline = "{} {} {} {} {} {} {}\n".format(timestamp, address, username, ourresult, upstreamresult, reason, solution)
-	sharewriter.queueshare(logline)
-
-
+	def logShare(self, share):
+		timestamp = time()
+		address = share.get('remoteHost','?')
+		username = share['username']
+		ourresult = YN(not share.get('rejectReason', None))
+		upstreamresult = YN(share.get('upstreamResult', None))
+		reason = share.get('rejectReason','-')
+		solution = share['solution']
+		
+		logline = "{} {} {} {} {} {} {}\n".format(timestamp, address, username, ourresult, upstreamresult, reason, solution)
+		self.queueshare(logline)

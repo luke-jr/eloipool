@@ -448,18 +448,18 @@ import sharelogging
 import imp
 
 if __name__ == "__main__":
-	if not hasattr(config, 'shareLogging'):
-		config.shareLogging = ()
+	if not hasattr(config, 'ShareLogging'):
+		config.ShareLogging = ()
 	if hasattr(config, 'DbOptions'):
-		config.shareLogging = list(config.shareLogging)
-		config.shareLogging.append( ('postgres', config.DbOptions) )
-	for i in config.shareLogging:
+		config.ShareLogging = list(config.ShareLogging)
+		config.ShareLogging.append( ('postgres', config.DbOptions) )
+	for i in config.ShareLogging:
 		name, parameters = i
 		try:
 			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
 			m = imp.load_module(name, fp, pathname, description)
-			m.setup(parameters)
-			loggersShare.append(m.logShare)
+			lo = getattr(m, name)(**parameters)
+			loggersShare.append(lo.logShare)
 		except:
 			logging.getLogger('logging').warn("error setting up logger %s: %s",name,  sys.exc_info())
 

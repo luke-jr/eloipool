@@ -17,21 +17,18 @@
 import psycopg2
 from util import YN
 
-db = None
-
-def setup(config):
-	global db
-	db = psycopg2.connect(**config)
-
-def logShare(share):
-	global db
-	dbc = db.cursor()
-	rem_host = share.get('remoteHost', '?')
-	username = share['username']
-	reason = share.get('rejectReason', None)
-	upstreamResult = share.get('upstreamResult', None)
-	solution = share['solution']
-	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
-	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
-	dbc.execute(stmt, params)
-	db.commit()
+class postgres:
+	def __init__(self, *a, **ka):
+		self.db = psycopg2.connect(*a, **ka)
+	
+	def logShare(self, share):
+		dbc = self.db.cursor()
+		rem_host = share.get('remoteHost', '?')
+		username = share['username']
+		reason = share.get('rejectReason', None)
+		upstreamResult = share.get('upstreamResult', None)
+		solution = share['solution']
+		stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
+		params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
+		dbc.execute(stmt, params)
+		self.db.commit()

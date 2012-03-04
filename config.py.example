@@ -60,9 +60,10 @@ BitcoinNodeAddresses = (
 	('', 8338),
 )
 
-
-# Loging of shares:
-shareLogging = (
-    ('logfile', 'share-logfile'),
+# Logging of shares:
+ShareLogging = (
+    ('logfile', {
+		'filename': 'share-logfile'
+	}),
 )
 
