@@ -15,13 +15,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import psycopg2
+from util import YN
 
 db = None
-
-def YN(b):
-	if b is None:
-		return None
-	return 'Y' if b else 'N'
 
 def setup(config):
 	global db

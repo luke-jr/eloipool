@@ -21,16 +21,11 @@ from collections import deque
 from datetime import date
 from time import sleep, time
 import threading
+from util import YN
 import logging
 import traceback
 
 _logger = logging.getLogger('logshares_files')
-
-def YN(b):
-	if b is None:
-		return 'N'
-	return 'Y' if b else 'N'
-
 
 class _writeshares(threading.Thread):
 	def __init__(self, filename, *a, **k):
