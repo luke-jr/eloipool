@@ -128,11 +128,6 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-db = None
-if hasattr(config, 'DbOptions'):
-	import psycopg2
-	db = psycopg2.connect(**config.DbOptions)
-
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
@@ -149,28 +144,7 @@ def getBlockTemplate(username):
 	workLog.setdefault(username, {})[wli] = (MC, time())
 	return MC
 
-def YN(b):
-	if b is None:
-		return None
-	return 'Y' if b else 'N'
-
-def logShare(share):
-	if db is None:
-		return
-	dbc = db.cursor()
-	rem_host = share.get('remoteHost', '?')
-	username = share['username']
-	reason = share.get('rejectReason', None)
-	upstreamResult = share.get('upstreamResult', None)
-	if '_origdata' in share:
-		solution = share['_origdata']
-	else:
-		solution = b2a_hex(swap32(share['data'])).decode('utf8')
-	#solution = b2a_hex(solution).decode('utf8')
-	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
-	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
-	dbc.execute(stmt, params)
-	db.commit()
+loggersShare = []
 
 RBDs = []
 RBPs = []
@@ -336,7 +310,12 @@ def receiveShare(share):
 		share['rejectReason'] = str(rej)
 		raise
 	finally:
-		logShare(share)
+		if '_origdata' in share:
+			share['solution'] = share['_origdata']
+		else:
+			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
+		for i in loggersShare:
+			i(share)
 
 def newBlockNotification(signum, frame):
 	logging.getLogger('newBlockNotification').info('Received new block notification')
@@ -465,8 +444,25 @@ from jsonrpcserver import JSONRPCListener, JSONRPCServer
 import interactivemode
 from networkserver import NetworkListener
 import threading
+import sharelogging
+import imp
 
 if __name__ == "__main__":
+	if not hasattr(config, 'ShareLogging'):
+		config.ShareLogging = ()
+	if hasattr(config, 'DbOptions'):
+		config.ShareLogging = list(config.ShareLogging)
+		config.ShareLogging.append( ('postgres', config.DbOptions) )
+	for i in config.ShareLogging:
+		name, parameters = i
+		try:
+			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
+			m = imp.load_module(name, fp, pathname, description)
+			lo = getattr(m, name)(**parameters)
+			loggersShare.append(lo.logShare)
+		except:
+			logging.getLogger('sharelogging').warn("Error setting up share logger %s: %s", name,  sys.exc_info())
+
 	LSbc = []
 	if not hasattr(config, 'BitcoinNodeAddresses'):
 		config.BitcoinNodeAddresses = ()

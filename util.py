@@ -18,6 +18,11 @@ from hashlib import sha256
 from struct import unpack
 import traceback
 
+def YN(b):
+	if b is None:
+		return 'N'
+	return 'Y' if b else 'N'
+
 def dblsha(b):
 	return sha256(sha256(b).digest()).digest()
 
