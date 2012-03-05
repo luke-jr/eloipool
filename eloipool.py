@@ -20,7 +20,10 @@ import config
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+	format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
+	level=logging.DEBUG,
+)
 for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
 	logging.getLogger(infoOnly).setLevel(logging.INFO)
 
