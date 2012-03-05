@@ -33,18 +33,18 @@ class sql:
 			_logger.warn('"statement" not specified for sql logger, but default may vary!')
 		getattr(self, 'setup_%s' % (dbe,))()
 	
-	def setup_mysql(self, **ka):
+	def setup_mysql(self):
 		import pymysql
 		self.db = pymysql.connect(**self.opts.get('dbopts', {}))
 		self.modsetup(mysql)
 	
-	def setup_postgres(self, **ka):
+	def setup_postgres(self):
 		import psycopg2
 		self.db = psycopg2.connect(**self.opts.get('dbopts', {}))
-		ka.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
+		self.opts.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
 		self.modsetup(psycopg2)
 	
-	def setup_sqlite(self, **ka):
+	def setup_sqlite(self):
 		import sqlite3
 		self.db = sqlite3.connect(**self.opts.get('dbopts', {}))
 		self.modsetup(sqlite3)
