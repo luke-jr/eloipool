@@ -15,6 +15,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from hashlib import sha256
+import re
+import string
 from struct import unpack
 import traceback
 
@@ -22,6 +24,72 @@ def YN(b):
 	if b is None:
 		return None
 	return 'Y' if b else 'N'
+
+class shareLogFormatter:
+	_re_x = re.compile(r'^\s*(\w+)\s*(?:\(\s*(.*?)\s*\))?\s*$')
+	
+	def __init__(self, *a, **ka):
+		self._p = self.parse(*a, **ka)
+	
+	# NOTE: This only works for psf='%s' (default)
+	def formatShare(self, *a, **ka):
+		(stmt, params) = self.applyToShare(*a, **ka)
+		return stmt % params
+	
+	def applyToShare(self, share):
+		(stmt, stmtf) = self._p
+		params = []
+		for f in stmtf:
+			params.append(f(share))
+		params = tuple(params)
+		return (stmt, params)
+	
+	@classmethod
+	def parse(self, stmt, psf = '%s'):
+		fmt = string.Formatter()
+		pstmt = tuple(fmt.parse(stmt))
+		
+		stmt = ''
+		fmt = []
+		for (lit, field, fmtspec, conv) in pstmt:
+			stmt += lit
+			if not field:
+				continue
+			f = self.get_field(field)
+			fmt.append(f)
+			stmt += psf
+		fmt = tuple(fmt)
+		return (stmt, fmt)
+	
+	@classmethod
+	def get_field(self, field):
+		m = self._re_x.match(field)
+		if m:
+			if m.group(2) is None:
+				# identifier
+				return lambda s: s.get(field, None)
+			else:
+				# function
+				fn = m.group(1)
+				sf = self.get_field(m.group(2))
+				return getattr(self, 'get_field_%s' % (fn,))(sf)
+		raise ValueError('Failed to parse field: %s' % (field,))
+	
+	@classmethod
+	def get_field_not(self, subfunc):
+		return lambda s: not subfunc(s)
+	
+	@classmethod
+	def get_field_Q(self, subfunc):
+		return lambda s: subfunc(s) or '?'
+	
+	@classmethod
+	def get_field_dash(self, subfunc):
+		return lambda s: subfunc(s) or '-'
+	
+	@classmethod
+	def get_field_YN(self, subfunc):
+		return lambda s: YN(subfunc(s))
 
 def dblsha(b):
 	return sha256(sha256(b).digest()).digest()

@@ -21,7 +21,7 @@ from collections import deque
 from datetime import date
 from time import sleep, time
 import threading
-from util import YN
+from util import shareLogFormatter
 import logging
 import traceback
 
@@ -31,6 +31,10 @@ class logfile(threading.Thread):
 	def __init__(self, filename, **ka):
 		super().__init__(**ka.get('thropts', {}))
 		self.fn=filename
+		if 'format' not in ka:
+			_logger.warn('"format" not specified for logfile logger, but default may vary!')
+			ka['format'] = "{time} {Q(remoteHost)} {username} {YN(not(rejectReason))} {dash(YN(upstreamResult))} {dash(rejectReason)} {solution}\n"
+		self.fmt = shareLogFormatter(ka['format'], '%s')
 		self.queue = deque()
 		self.start()
 	
@@ -52,13 +56,5 @@ class logfile(threading.Thread):
 				_logger.critical(traceback.format_exc())
 	
 	def logShare(self, share):
-		timestamp = time()
-		address = share.get('remoteHost','?')
-		username = share['username']
-		ourresult = YN(not share.get('rejectReason', None))
-		upstreamresult = YN(share.get('upstreamResult', None)) or '-'
-		reason = share.get('rejectReason','-')
-		solution = share['solution']
-		
-		logline = "{} {} {} {} {} {} {}\n".format(timestamp, address, username, ourresult, upstreamresult, reason, solution)
+		logline = self.fmt.formatShare(share)
 		self.queueshare(logline)

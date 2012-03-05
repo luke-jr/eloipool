@@ -167,6 +167,8 @@ def blockSubmissionThread(payload):
 			pass
 
 def checkShare(share):
+	shareTime = share['time'] = time()
+	
 	data = share['data']
 	data = data[:80]
 	(prevBlock, bits) = MM.currentBlock
@@ -211,8 +213,6 @@ def checkShare(share):
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
 	DupeShareHACK[data] = None
-	
-	shareTime = share['time'] = time()
 	
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':

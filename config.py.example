@@ -65,6 +65,7 @@ ShareLogging = (
 	{
 		'type': 'logfile',
 		'filename': 'share-logfile',
+		'format': "{time} {Q(remoteHost)} {username} {YN(not(rejectReason))} {dash(YN(upstreamResult))} {dash(rejectReason)} {solution}\n",
 	},
 	{
 		'type': 'sql',
@@ -75,6 +76,7 @@ ShareLogging = (
 			'user': 'eloipool',
 			'password': 'somethingsecret',
 		},
+		'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
 	},
 )
 
