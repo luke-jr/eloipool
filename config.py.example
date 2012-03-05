@@ -78,5 +78,24 @@ ShareLogging = (
 		},
 		'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
 	},
+	{
+		'type': 'sql',
+		'engine': 'mysql',
+		'dbopts': {
+			'host': 'localhost',
+			'db': 'pooldb',
+			'user': 'eloipool',
+			'password': 'somethingsecret',
+		},
+		'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
+	},
+	{
+		'type': 'sql',
+		'engine': 'sqlite',
+		'dbopts': {
+			'database': 'share.db',
+		},
+		'statement': "insert into shares (remoteHost, username, rejectReason, upstreamResult, solution) values ({remoteHost}, {username}, {rejectReason}, {upstreamResult}, {solution})",
+	},
 )
 

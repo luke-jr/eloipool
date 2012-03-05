@@ -32,14 +32,25 @@ class sql:
 			_logger.warn('"statement" not specified for sql logger, but default may vary!')
 		getattr(self, 'setup_%s' % (dbe,))()
 	
+	def setup_mysql(self, **ka):
+		import pymysql
+		self.db = pymysql.connect(**self.opts.get('dbopts', {}))
+		self.modsetup(mysql)
+	
 	def setup_postgres(self, **ka):
 		import psycopg2
 		self.db = psycopg2.connect(**self.opts.get('dbopts', {}))
 		ka.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
 		self.modsetup(psycopg2)
 	
+	def setup_sqlite(self, **ka):
+		import sqlite3
+		self.db = sqlite3.connect(**self.opts.get('dbopts', {}))
+		self.modsetup(sqlite3)
+	
 	def modsetup(self, mod):
 		psf = self._psf[mod.paramstyle]
+		self.opts.setdefault('statement', "insert into shares (remoteHost, username, rejectReason, upstreamResult, solution) values ({remoteHost}, {username}, {rejectReason}, {upstreamResult}, {solution})")
 		stmt = self.opts['statement']
 		self.pstmt = shareLogFormatter(stmt, psf)
 	
