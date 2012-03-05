@@ -32,10 +32,10 @@ class sql:
 			_logger.warn('"statement" not specified for sql logger, but default may vary!')
 		getattr(self, 'setup_%s' % (dbe,))()
 	
-	def setup_postgres(self, **ka):
+	def setup_postgres(self):
 		import psycopg2
 		self.db = psycopg2.connect(**self.opts.get('dbopts', {}))
-		ka.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
+		self.opts.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
 		self.modsetup(psycopg2)
 	
 	def modsetup(self, mod):
