@@ -20,12 +20,13 @@ import config
 
 import logging
 
-logging.basicConfig(
-	format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
-	level=logging.DEBUG,
-)
-for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
-	logging.getLogger(infoOnly).setLevel(logging.INFO)
+if len(logging.root.handlers) == 0:
+	logging.basicConfig(
+		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
+		level=logging.DEBUG,
+	)
+	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
+		logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
 	logging.getLogger('redflag').critical(reason)
