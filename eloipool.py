@@ -451,6 +451,7 @@ if __name__ == "__main__":
 	if not hasattr(config, 'ShareLogging'):
 		config.ShareLogging = ()
 	if hasattr(config, 'DbOptions'):
+		logging.getLogger('backwardCompatibility').warn('DbOptions configuration variable is deprecated; upgrade to ShareLogging var before 2013-03-05')
 		config.ShareLogging = list(config.ShareLogging)
 		config.ShareLogging.append( {
 			'type': 'sql',
@@ -504,6 +505,7 @@ if __name__ == "__main__":
 	
 	server = JSONRPCServer()
 	if hasattr(config, 'JSONRPCAddress'):
+		logging.getLogger('backwardCompatibility').warn('JSONRPCAddress configuration variable is deprecated; upgrade to JSONRPCAddresses list before 2013-03-05')
 		if not hasattr(config, 'JSONRPCAddresses'):
 			config.JSONRPCAddresses = []
 		config.JSONRPCAddresses.insert(0, config.JSONRPCAddress)
