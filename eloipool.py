@@ -456,6 +456,7 @@ if __name__ == "__main__":
 			'type': 'sql',
 			'engine': 'postgres',
 			'dbopts': config.DbOptions,
+			'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
 		} )
 	for i in config.ShareLogging:
 		if not hasattr(i, 'keys'):
