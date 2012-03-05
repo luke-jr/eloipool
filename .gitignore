@@ -10,3 +10,4 @@ base58.py
 midstate.so
 *.orig
 *.rej
+eloipool.worklog
