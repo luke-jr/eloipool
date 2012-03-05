@@ -23,6 +23,7 @@ class sql:
 	_psf = {
 		'qmark': '?',
 		'format': '%s',
+		'pyformat': '%s',
 	}
 	
 	def __init__(self, **ka):
