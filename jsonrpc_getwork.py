@@ -27,6 +27,7 @@ from struct import pack
 from util import RejectedShare, swap32
 
 _CheckForDupesHACK = {}
+_RealDupes = {}
 class _getwork:
 	getwork_rv_template = {
 		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
@@ -38,14 +39,19 @@ class _getwork:
 			return self.doJSON_submitwork(data)
 		rv = dict(self.getwork_rv_template)
 		hdr = self.server.getBlockHeader(self.Username)
+		if isinstance(hdr, tuple):
+			(hdr, x) = hdr
+		else:
+			x = None
 		
 		# FIXME: this assumption breaks with internal rollntime
 		# NOTE: noncerange needs to set nonce to start value at least
 		global _CheckForDupesHACK
 		uhdr = hdr[:68] + hdr[72:]
 		if uhdr in _CheckForDupesHACK:
+			_RealDupes[uhdr] = (_CheckForDupesHACK[uhdr], (hdr, x))
 			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate work'))
-		_CheckForDupesHACK[uhdr] = None
+		_CheckForDupesHACK[uhdr] = (hdr, x)
 		
 		data = b2a_hex(swap32(hdr)).decode('utf8') + rv['data']
 		# TODO: endian shuffle etc

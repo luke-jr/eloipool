@@ -138,7 +138,7 @@ def getBlockHeader(username):
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	return hdr
+	return (hdr, workLog[username][merkleRoot])
 
 def getBlockTemplate(username):
 	MC = MM.getMC()
