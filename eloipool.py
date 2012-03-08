@@ -233,6 +233,7 @@ def checkShare(share):
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
+	txlist = [deepcopy(txlist[0]),] + txlist[1:]
 	cbtxn = txlist[0]
 	cbtxn.setCoinbase(workCoinbase)
 	cbtxn.assemble()
@@ -294,13 +295,11 @@ def checkShare(share):
 		if len(coinbase) > 100:
 			raise RejectedShare('bad-cb-length')
 		
-		cbtxn = deepcopy(cbtxn)
 		cbtxn.setCoinbase(coinbase)
 		cbtxn.assemble()
 		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
 			raise RejectedShare('bad-txnmrklroot')
 		
-		txlist = [cbtxn,] + txlist[1:]
 		allowed = assembleBlock(data, txlist)
 		if allowed != share['data'] + share['blkdata']:
 			raise RejectedShare('bad-txns')
