@@ -87,6 +87,7 @@ MM.start()
 
 
 from binascii import b2a_hex
+from copy import deepcopy
 from struct import pack, unpack
 from time import time
 from util import RejectedShare, dblsha, hash2int
@@ -176,6 +177,7 @@ def checkShare(share):
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
 	txlist = MRD[1].data
+	txlist = [deepcopy(txlist[0]),] + txlist[1:]
 	t = txlist[0]
 	t.setCoinbase(MRD[2])
 	t.assemble()
