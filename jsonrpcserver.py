@@ -73,10 +73,13 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		except:
 			pass
 		if UA in self._MidstateNotAdv:
-			quirks['midstate'] = None
 			if UA == b'phoenix':
+				if v != (1, 50, 0):
+					quirks['midstate'] = None
 				if v[0] < 2 and v[1] < 8 and v[2] < 1:
 					quirks['NELH'] = None
+			else:
+				quirks['midstate'] = None
 	
 	def doHeader_x_minimum_wait(self, value):
 		self.reqinfo['MinWait'] = int(value)
