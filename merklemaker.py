@@ -50,7 +50,16 @@ class merkleMaker(threading.Thread):
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
 		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
 		
+		if not hasattr(self, 'WarningDelay'):
+			self.WarningDelay = max(15, self.MinimumTxnUpdateWait * 2)
+		if not hasattr(self, 'WarningDelayTxnLongpoll'):
+			self.WarningDelayTxnLongpoll = self.WarningDelay
+		if not hasattr(self, 'WarningDelayMerkleUpdate'):
+			self.WarningDelayMerkleUpdate = self.WarningDelay
+		
+		self.lastMerkleUpdate = 0
 		self.nextMerkleUpdate = 0
+		self.lastWarning = {}
 		global now
 		now = time()
 		self.updateMerkleTree()
@@ -112,10 +121,12 @@ class merkleMaker(threading.Thread):
 		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
+		self.lastMerkleUpdate = now
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 		
 		if self.needMerkle == 2:
 			self.needMerkle = 1
+			self.needMerkleSince = now
 	
 	def makeCoinbase(self):
 		now = int(time())
@@ -161,6 +172,16 @@ class merkleMaker(threading.Thread):
 		self._doing_i = 1
 		self._doing_s = now
 	
+	def _floodWarning(self, now, wid, wmsgf):
+		winfo = self.lastWarning.setdefault(wid, [0, None])
+		(lastTime, lastDoing) = winfo
+		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and self._doing_last == lastDoing:
+			return
+		winfo[0] = now
+		nowDoing = self._doing_last
+		winfo[1] = nowDoing
+		self.logger.warning("%s (doing %s)" % (wmsgf(), nowDoing))
+	
 	def merkleMaker_I(self):
 		global now
 		
@@ -183,6 +204,10 @@ class merkleMaker(threading.Thread):
 			self._doing('idle')
 			# TODO: rather than sleepspin, block until MinimumTxnUpdateWait expires or threading.Condition(?)
 			sleep(self.IdleSleepTime)
+		if self.needMerkle == 1 and now > self.needMerkleSince + self.WarningDelayTxnLongpoll:
+			self._floodWarning(now, 'NeedMerkle', lambda: 'Transaction-longpoll requested %d seconds ago, and still not ready. Is your server fast enough to keep up with your configured WorkQueueSizeRegular maximum?' % (now - self.needMerkleSince,))
+		if now > self.nextMerkleUpdate + self.WarningDelayMerkleUpdate:
+			self._floodWarning(now, 'MerkleUpdate', lambda: "Haven't updated the merkle tree in at least %d seconds! Is your server fast enough to keep up with your configured work queue minimums?" % (now - self.lastMerkleUpdate,))
 	
 	def run(self):
 		while True:
