@@ -88,9 +88,9 @@ class HTTPHandler(networkserver.SocketHandler):
 	
 	def doHeader_x_forwarded_for(self, value):
 		if self.addr[0] in self.server.TrustedForwarders:
-			self.remoteHost=value.decode('ascii')
+			self.remoteHost = value.decode('ascii')
 		else:
-			self.logger.info("Invalid forwarded for from address %s" % self.addr[0])
+			self.logger.info("Ignoring X-Forwarded-For header from %s" % (self.addr[0],))
 	
 	def doAuthenticate(self):
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})

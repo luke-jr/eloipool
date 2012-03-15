@@ -60,7 +60,7 @@ BitcoinNodeAddresses = (
 	('', 8338),
 )
 
-# Adresses that are allowed to "spoof" the ip address with the X-Forwarded-For header
+# Addresses that are allowed to "spoof" from address with the X-Forwarded-For header
 TrustedForwarders = ('::ffff:127.0.0.1',)
 
 
