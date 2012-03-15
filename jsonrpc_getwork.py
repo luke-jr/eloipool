@@ -67,7 +67,7 @@ class _getwork:
 			'data': data,
 			'_origdata' : datax,
 			'username': self.Username,
-			'remoteHost': self.addr[0],
+			'remoteHost': self.remoteHost,
 		}
 		try:
 			self.server.receiveShare(share)

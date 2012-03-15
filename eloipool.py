@@ -523,6 +523,10 @@ if __name__ == "__main__":
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
 	
+	server.TrustedForwarders = ()
+	if hasattr(config, 'TrustedForwarders'):
+		server.TrustedForwarders = config.TrustedForwarders
+	
 	restoreState()
 	
 	bcnode_thr = threading.Thread(target=bcnode.serve_forever)

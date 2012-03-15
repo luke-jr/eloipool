@@ -60,6 +60,10 @@ BitcoinNodeAddresses = (
 	('', 8338),
 )
 
+# Addresses that are allowed to "spoof" from address with the X-Forwarded-For header
+TrustedForwarders = ('::ffff:127.0.0.1',)
+
+
 # Logging of shares:
 ShareLogging = (
 	{
