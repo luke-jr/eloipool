@@ -105,7 +105,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		
 		totfromme = self.LPTrack()
 		self.server._LPClients[id(self)] = self
-		self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.addr[0]))
+		self.logger.debug("New LP client; %d total; %d from %s" % (len(self.server._LPClients), totfromme, self.remoteHost))
 		
 		raise WithinLongpoll
 	
@@ -115,14 +115,14 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		self.changeTask(self._chunkedKA, time() + 45)
 	
 	def LPTrack(self):
-		myip = self.addr[0]
+		myip = self.remoteHost
 		if myip not in self.server.LPTracking:
 			self.server.LPTracking[myip] = 0
 		self.server.LPTracking[myip] += 1
 		return self.server.LPTracking[myip]
 	
 	def LPUntrack(self):
-		self.server.LPTracking[self.addr[0]] -= 1
+		self.server.LPTracking[self.remoteHost] -= 1
 	
 	def cleanupLP(self):
 		# Called when the connection is closed

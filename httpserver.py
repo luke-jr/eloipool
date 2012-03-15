@@ -86,6 +86,12 @@ class HTTPHandler(networkserver.SocketHandler):
 	def doHeader_content_length(self, value):
 		self.CL = int(value)
 	
+	def doHeader_x_forwarded_for(self, value):
+		if self.addr[0] in self.server.TrustedForwarders:
+			self.remoteHost=value.decode('ascii')
+		else:
+			self.logger.info("Invalid forwarded for from address %s" % self.addr[0])
+	
 	def doAuthenticate(self):
 		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
 	
@@ -216,6 +222,8 @@ class HTTPHandler(networkserver.SocketHandler):
 		self.changeTask(self.handle_timeout, time() + 150)
 		if 'close' in self.quirks:
 			self.close()
+		# proxies can do multiple requests in one connection for multiple clients, so reset address every time
+		self.remoteHost = self.addr[0]
 	
 	collect_incoming_data = asynchat.async_chat._collect_incoming_data
 	
@@ -225,3 +233,4 @@ class HTTPHandler(networkserver.SocketHandler):
 		self.reset_request()
 	
 setattr(HTTPHandler, 'doHeader_content-length', HTTPHandler.doHeader_content_length);
+setattr(HTTPHandler, 'doHeader_x-forwarded-for', HTTPHandler.doHeader_x_forwarded_for);

@@ -60,7 +60,7 @@ class _getmemorypool:
 			'data': data[:80],
 			'blkdata': data[80:],
 			'username': self.Username,
-			'remoteHost': self.addr[0],
+			'remoteHost': self.remoteHost,
 		}
 		try:
 			self.server.receiveShare(share)
