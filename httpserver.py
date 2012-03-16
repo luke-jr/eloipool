@@ -42,7 +42,7 @@ class HTTPHandler(networkserver.SocketHandler):
 	default_quirks = {}
 	
 	def sendReply(self, status=200, body=b'', headers=None):
-		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
+		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Unknown'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		headers.setdefault('Server', 'Eloipool')
