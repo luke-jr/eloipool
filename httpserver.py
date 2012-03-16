@@ -42,7 +42,7 @@ class HTTPHandler(networkserver.SocketHandler):
 	default_quirks = {}
 	
 	def sendReply(self, status=200, body=b'', headers=None):
-		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
+		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Unknown'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		headers.setdefault('Server', 'Eloipool')
@@ -93,7 +93,7 @@ class HTTPHandler(networkserver.SocketHandler):
 			self.logger.debug("Ignoring X-Forwarded-For header from %s" % (self.addr[0],))
 	
 	def doAuthenticate(self):
-		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
+		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="%s"' % (self.server.ServerName,)})
 	
 	def parse_headers(self, hs):
 		self.CL = None

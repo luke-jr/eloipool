@@ -17,6 +17,9 @@
 
 import config
 
+if not hasattr(config, 'ServerName'):
+	config.ServerName = 'Unnamed Eloipool'
+
 
 import logging
 
@@ -526,6 +529,7 @@ if __name__ == "__main__":
 	server.TrustedForwarders = ()
 	if hasattr(config, 'TrustedForwarders'):
 		server.TrustedForwarders = config.TrustedForwarders
+	server.ServerName = config.ServerName
 	
 	restoreState()
 	
