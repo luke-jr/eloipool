@@ -93,7 +93,7 @@ class HTTPHandler(networkserver.SocketHandler):
 			self.logger.debug("Ignoring X-Forwarded-For header from %s" % (self.addr[0],))
 	
 	def doAuthenticate(self):
-		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="Eligius"'})
+		self.sendReply(401, headers={'WWW-Authenticate': 'Basic realm="%s"' % (self.server.ServerName,)})
 	
 	def parse_headers(self, hs):
 		self.CL = None
