@@ -46,6 +46,8 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if body and body[0] == 123:  # b'{'
 			headers.setdefault('Content-Type', 'application/json')
 		if status == 200 and self.path in self.JSONRPCURIs:
+			if not body:
+				headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
 			if self.JSONRPCMethod == 'getwork':
 				# FIXME: Move this to jsonrpc_getwork somehow
