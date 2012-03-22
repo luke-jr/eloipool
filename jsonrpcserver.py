@@ -37,16 +37,19 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		'X-Long-Polling': None,
 	}
 	
+	JSONRPCURIs = (b'/', b'/LP', b'/LP/')
+	
 	logger = logging.getLogger('JSONRPCHandler')
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		headers = dict(headers) if headers else {}
-		if status == 200:
+		if body and body[0] == 123:  # b'{'
 			headers.setdefault('Content-Type', 'application/json')
+		if status == 200 and self.path in self.JSONRPCURIs:
 			headers.setdefault('X-Long-Polling', '/LP')
-			headers.setdefault('X-Roll-NTime', 'expire=120')
-		elif body and body[0] == 123:  # b'{'
-			headers.setdefault('Content-Type', 'application/json')
+			if self.JSONRPCMethod == 'getwork':
+				# FIXME: Move this to jsonrpc_getwork somehow
+				headers.setdefault('X-Roll-NTime', 'expire=120')
 		return super().sendReply(status, body, headers)
 	
 	def fmtError(self, reason = '', code = 100):
@@ -184,7 +187,9 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			return self.doLongpoll(1, 'doJSON_getwork', ())
 		try:
 			data = json.loads(data)
-			method = 'doJSON_' + str(data['method']).lower()
+			method = str(data['method']).lower()
+			self.JSONRPCMethod = method
+			method = 'doJSON_' + method
 		except ValueError:
 			return self.doError(r'Parse error')
 		except TypeError:
@@ -204,12 +209,14 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		super().handle_close()
 	
 	def handle_request(self):
-		if not self.Username:
-			return self.doAuthenticate()
 		if not self.method in (b'GET', b'POST'):
 			return self.sendReply(405)
-		if not self.path in (b'/', b'/LP', b'/LP/'):
+		if not self.path in self.JSONRPCURIs:
+			if self.path[:5] == b'/src/':
+				return self.handle_src_request()
 			return self.sendReply(404)
+		if not self.Username:
+			return self.doAuthenticate()
 		try:
 			data = b''.join(self.incoming)
 			return self.doJSON(data, self.path[:3] == b'/LP')
@@ -223,6 +230,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	
 	def reset_request(self):
 		self._LP = False
+		self.JSONRPCMethod = None
 		super().reset_request()
 	
 setattr(JSONRPCHandler, 'doHeader_user-agent', JSONRPCHandler.doHeader_user_agent);

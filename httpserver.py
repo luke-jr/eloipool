@@ -20,10 +20,25 @@ from datetime import datetime
 from email.utils import formatdate
 import logging
 import networkserver
+import os
 import re
 from struct import pack
 from time import mktime, time
 import traceback
+
+# It is not legal to bypass or lie to this check. See LICENSE file for details.
+try:
+	_srcdir = os.path.dirname(os.path.abspath(__file__))
+	if os.path.exists(_srcdir + '/.I_swear_that_I_am_Luke_Dashjr'):
+		_SourceFiles = None
+	else:
+		_SourceFiles = os.popen('cd \'%s\' && git ls-files' % (_srcdir,)).read().split('\n')
+		if len(_SourceFiles) < 2:
+			raise RuntimeError('Unknown error')
+except BaseException as e:
+	logging.getLogger('Licensing').critical('Error getting list of source files! AGPL requires this. To fix, be sure you are using git for Eloipool.\n' + traceback.format_exc())
+	import sys
+	sys.exit(1)
 
 class AsyncRequest(BaseException):
 	pass
@@ -46,6 +61,8 @@ class HTTPHandler(networkserver.SocketHandler):
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		headers.setdefault('Server', 'Eloipool')
+		if not _SourceFiles is None:
+			headers.setdefault('X-Source-Code', '/src/')
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
 			body = b''
@@ -214,6 +231,20 @@ class HTTPHandler(networkserver.SocketHandler):
 						# no prefix, collect it all
 						self.collect_incoming_data (self.ac_in_buffer)
 						self.ac_in_buffer = b''
+	
+	def handle_src_request(self):
+		if _SourceFiles is None:
+			return self.sendReply(404)
+		# For AGPL compliance, allow direct downloads of source code
+		p = self.path[5:]
+		if p == b'':
+			# List of files
+			return self.sendReply(body=("\n".join(_SourceFiles).encode('utf8')) + b"\n")
+		p = p.decode('utf8')
+		if p not in _SourceFiles:
+			return self.sendReply(404)
+		with open("%s/%s" % (_srcdir, p), 'rb') as f:
+			self.sendReply(body=f.read())
 	
 	def reset_request(self):
 		self.incoming = []
