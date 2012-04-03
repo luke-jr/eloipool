@@ -34,8 +34,12 @@ class sql:
 	
 	def setup_mysql(self, **ka):
 		import pymysql
-		self.db = pymysql.connect(**self.opts.get('dbopts', {}))
-		self.modsetup(mysql)
+		dbopts = self.opts.get('dbopts', {})
+		if 'passwd' not in dbopts and 'password' in dbopts:
+			dbopts['passwd'] = dbopts['password']
+			del dbopts['password']
+		self.db = pymysql.connect(**dbopts)
+		self.modsetup(pymysql)
 	
 	def setup_postgres(self, **ka):
 		import psycopg2
