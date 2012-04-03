@@ -3,7 +3,7 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-from binascii import a2b_hex, b2a_hex
+from binascii import b2a_hex
 import bitcoin.txn
 import bitcoin.varlen
 import jsonrpc
@@ -23,15 +23,15 @@ worklog = {}
 currentwork = [None, 0, 0]
 
 def makeMRD(mp):
-	coinbase = a2b_hex(mp['coinbasetxn'])
+	coinbase = bytes.fromhex(mp['coinbasetxn'])
 	cbtxn = bitcoin.txn.Txn(coinbase)
 	cbtxn.disassemble()
 	cbtxn.originalCB = cbtxn.getCoinbase()
-	txnlist = [cbtxn,] + list(map(bitcoin.txn.Txn, map(a2b_hex, mp['transactions'])))
+	txnlist = [cbtxn,] + list(map(bitcoin.txn.Txn, map(bytes.fromhex, mp['transactions'])))
 	merkleTree = merkletree.MerkleTree(txnlist)
 	merkleRoot = None
-	prevBlock = a2b_hex(mp['previousblockhash'])[::-1]
-	bits = a2b_hex(mp['bits'])[::-1]
+	prevBlock = bytes.fromhex(mp['previousblockhash'])[::-1]
+	bits = bytes.fromhex(mp['bits'])[::-1]
 	rollPrevBlk = False
 	MRD = (merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk, mp)
 	if 'coinbase/append' in mp.get('mutable', ()):

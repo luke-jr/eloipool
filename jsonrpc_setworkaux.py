@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import a2b_hex
 from jsonrpcserver import JSONRPCHandler
 
 class _setworkaux:
@@ -23,7 +22,7 @@ class _setworkaux:
 			self.doAuthenticate()
 			return None
 		if hexv:
-			self.server.aux[k] = a2b_hex(hexv)
+			self.server.aux[k] = bytes.fromhex(hexv)
 		else:
 			del self.server.aux[k]
 		return True

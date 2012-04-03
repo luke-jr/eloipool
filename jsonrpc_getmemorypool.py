@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import a2b_hex, b2a_hex
+from binascii import b2a_hex
 from copy import deepcopy
 from jsonrpcserver import JSONRPCHandler
 from time import time
@@ -55,7 +55,7 @@ class _getmemorypool:
 		return rv
 	
 	def doJSON_submitblock(self, data):
-		data = a2b_hex(data)
+		data = bytes.fromhex(data)
 		share = {
 			'data': data[:80],
 			'blkdata': data[80:],

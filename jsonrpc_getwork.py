@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import a2b_hex, b2a_hex
+from binascii import b2a_hex
 from jsonrpcserver import JSONRPCHandler
 import logging
 try:
@@ -62,7 +62,7 @@ class _getwork:
 		return rv
 	
 	def doJSON_submitwork(self, datax):
-		data = swap32(a2b_hex(datax))[:80]
+		data = swap32(bytes.fromhex(datax))[:80]
 		share = {
 			'data': data,
 			'_origdata' : datax,

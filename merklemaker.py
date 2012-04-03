@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import a2b_hex, b2a_hex
+from binascii import b2a_hex
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
@@ -92,12 +92,12 @@ class merkleMaker(threading.Thread):
 		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
-		prevBlock = a2b_hex(MP['previousblockhash'])[::-1]
-		bits = a2b_hex(MP['bits'])[::-1]
+		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
+		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
 			self.updateBlock(prevBlock, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		# TODO: cache Txn or at least txid from previous merkle roots?
-		txnlist = [a for a in map(a2b_hex, MP['transactions'])]
+		txnlist = [a for a in map(bytes.fromhex, MP['transactions'])]
 		
 		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
 		cbtxn.setCoinbase(b'\0\0')
