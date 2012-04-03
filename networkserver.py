@@ -187,6 +187,9 @@ class AsyncSocketServer:
 	waker = False
 	
 	def __init__(self, RequestHandlerClass):
+		if not hasattr(self, 'ServerName'):
+			self.ServerName = 'Eloipool'
+		
 		self.RequestHandlerClass = RequestHandlerClass
 		
 		self.running = False
