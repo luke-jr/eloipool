@@ -27,7 +27,8 @@ IdleSleepTime = 0.1
 TrackerAddr = 'mrsP7M31efGkQHXb7nRiWLDjfV2M8oakf2'  # testnet
 
 # Coinbaser command to control reward delegation
-CoinbaserCmd = 'let x=%d-1; echo -e "1\\n$x\\n1GEJfZRPrK2BLSSx3r6gwtuFxCUvq3QytN\\n"'
+# NOTE: This example donates 1% of block rewards to Luke-Jr for Eloipool development
+CoinbaserCmd = 'echo "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU\\n"'
 
 ### Settings relating to upstream data providers
 
