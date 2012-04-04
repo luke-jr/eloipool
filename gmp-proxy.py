@@ -121,6 +121,6 @@ jsonrpcserver.JSONRPCHandler.LPTrack = LPHook.LPTrack
 server = jsonrpcserver.JSONRPCServer()
 server.getBlockHeader = MakeWork
 server.receiveShare = SubmitShare
-jsonrpcserver.JSONRPCListener(server, ('::ffff:127.0.0.1', 9332))
+jsonrpcserver.JSONRPCListener(server, ('', 9332))
 
 server.serve_forever()
