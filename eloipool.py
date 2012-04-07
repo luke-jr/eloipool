@@ -226,13 +226,15 @@ def checkShare(share):
 		raise RejectedShare('H-not-zero')
 	blkhashn = LEhash2int(blkhash)
 	
-	global networkTarget
-	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
-	logfunc('BLKHASH: %64x' % (blkhashn,))
-	logfunc(' TARGET: %64x' % (networkTarget,))
-	
 	workMerkleTree = wld[1]
 	workCoinbase = wld[2]
+	
+	global networkTarget
+	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
+	if workMerkleTree.upstreamTarget != networkTarget:
+		logfunc('pTARGET: %64x' % (workMerkleTree.upstreamTarget,))
+	logfunc('BLKHASH: %64x' % (blkhashn,))
+	logfunc(' TARGET: %64x' % (networkTarget,))
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
@@ -241,7 +243,8 @@ def checkShare(share):
 	cbtxn.setCoinbase(workCoinbase)
 	cbtxn.assemble()
 	
-	if blkhashn <= networkTarget:
+	isBlock = blkhashn <= networkTarget
+	if isBlock or blkhashn <= workMerkleTree.upstreamTarget:
 		logfunc("Submitting upstream")
 		if not moden:
 			RBDs.append( deepcopy( (data, txlist) ) )
@@ -249,12 +252,14 @@ def checkShare(share):
 		else:
 			RBDs.append( deepcopy( (data, txlist, share['blkdata']) ) )
 			payload = share['data'] + share['blkdata']
-		logfunc('Real block payload: %s' % (payload,))
-		RBPs.append(payload)
-		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
-		bcnode.submitBlock(payload)
+		if isBlock:
+			logfunc('Real block payload: %s' % (payload,))
+			RBPs.append(payload)
 		share['upstreamResult'] = True
-		MM.updateBlock(blkhash)
+		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
+		if isBlock:
+			bcnode.submitBlock(payload)
+			MM.updateBlock(blkhash)
 	
 	# Gotwork hack...
 	if gotwork and blkhashn <= config.GotWorkTarget:

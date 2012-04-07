@@ -26,6 +26,7 @@ from struct import pack
 import threading
 from time import sleep, time
 import traceback
+from util import BEhash2int, Bits2Target
 
 _makeCoinbase = [0, 0]
 
@@ -47,6 +48,7 @@ class merkleMaker(threading.Thread):
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
 		self.LowestMerkleRoots = self.WorkQueueSizeRegular[1]
 		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
+		self.clearMerkleTree.upstreamTarget = (2 ** 224) - 1
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
 		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
 		
@@ -84,6 +86,7 @@ class merkleMaker(threading.Thread):
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
 		self.currentBlock = (newBlock, bits)
+		self.clearMerkleTree.upstreamTarget = max(self.clearMerkleTree.upstreamTarget, Bits2Target(bits))
 		self.needMerkle = 2
 		self.onBlockChange()
 	
@@ -92,6 +95,7 @@ class merkleMaker(threading.Thread):
 		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
+		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
@@ -118,7 +122,14 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
-		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
+		
+		if 'target' in MP:
+			newMerkleTree.upstreamTarget = BEhash2int(bytes.fromhex(MP['target']))
+		else:
+			newMerkleTree.upstreamTarget = Bits2Target(bits)
+		self.clearMerkleTree.upstreamTarget = newMerkleTree.upstreamTarget
+		
+		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot() or newMerkleTree.upstreamTarget != self.currentMerkleTree.upstreamTarget:
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
