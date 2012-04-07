@@ -120,7 +120,7 @@ from binascii import b2a_hex
 from copy import deepcopy
 from struct import pack, unpack
 from time import time
-from util import RejectedShare, dblsha, LEhash2int, swap32
+from util import PendingUpstream, RejectedShare, dblsha, LEhash2int, swap32
 import jsonrpc
 import threading
 import traceback
@@ -128,6 +128,9 @@ import traceback
 gotwork = None
 if hasattr(config, 'GotWorkURI'):
 	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
+
+if not hasattr(config, 'DelayLogForUpstream'):
+	config.DelayLogForUpstream = False
 
 def submitGotwork(info):
 	try:
@@ -165,13 +168,27 @@ def assembleBlock(blkhdr, txlist):
 		payload += tx.data
 	return payload
 
-def blockSubmissionThread(payload):
+def blockSubmissionThread(payload, share):
+	payload = b2a_hex(payload).decode('ascii')
 	while True:
 		try:
-			UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
+			reason = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
 		except:
 			pass
+		try:
+			reason = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+			reason = None if reason else 'rejected'
+			break
+		except:
+			pass
+	if reason:
+		blockSubmissionThread.logger.warning('Upstream block submission failed: %s' % (reason,))
+	if share['upstreamRejectReason'] is PendingUpstream:
+		share['upstreamRejectReason'] = reason
+		share['upstreamResult'] = not reason
+		logShare(share)
+blockSubmissionThread.logger = logging.getLogger('blockSubmission')
 
 def checkShare(share):
 	shareTime = share['time'] = time()
@@ -255,8 +272,12 @@ def checkShare(share):
 		if isBlock:
 			logfunc('Real block payload: %s' % (payload,))
 			RBPs.append(payload)
-		share['upstreamResult'] = True
-		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
+		if config.DelayLogForUpstream:
+			share['upstreamRejectReason'] = PendingUpstream
+		else:
+			share['upstreamRejectReason'] = None
+			share['upstreamResult'] = True
+		threading.Thread(target=blockSubmissionThread, args=(payload, share)).start()
 		if isBlock:
 			bcnode.submitBlock(payload)
 			MM.updateBlock(blkhash)
@@ -313,6 +334,14 @@ def checkShare(share):
 			raise RejectedShare('bad-txns')
 checkShare.logger = logging.getLogger('checkShare')
 
+def logShare(share):
+	if '_origdata' in share:
+		share['solution'] = share['_origdata']
+	else:
+		share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
+	for i in loggersShare:
+		i.logShare(share)
+
 def receiveShare(share):
 	# TODO: username => userid
 	try:
@@ -321,12 +350,8 @@ def receiveShare(share):
 		share['rejectReason'] = str(rej)
 		raise
 	finally:
-		if '_origdata' in share:
-			share['solution'] = share['_origdata']
-		else:
-			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
-		for i in loggersShare:
-			i.logShare(share)
+		if not share.get('upstreamRejectReason', None) is PendingUpstream:
+			logShare(share)
 
 def newBlockNotification(signum, frame):
 	logging.getLogger('newBlockNotification').info('Received new block notification')

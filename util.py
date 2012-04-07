@@ -129,6 +129,8 @@ def tryErr(func, *a, **kw):
 class RejectedShare(ValueError):
 	pass
 
+PendingUpstream = object()
+
 
 import heapq
 

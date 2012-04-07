@@ -35,6 +35,14 @@ CoinbaserCmd = 'echo "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU\\n"
 # JSON-RPC server for getmemorypool
 UpstreamURI = 'http://user:pass@localhost:18332'
 
+# Set to True if you want shares meeting the upstream target to wait for a
+# response from the upstream server before logging them. Otherwise, for such
+# shares, upstreamResult will always be True and upstreamRejectReason will
+# always be None. Note that enabling this may cause shares to be logged out of
+# order, or with the wrong timestamp (if your share logger uses the log-time
+# rather than share-time).
+DelayLogForUpstream = False
+
 # Bitcoin p2p server for announcing blocks found
 UpstreamBitcoindNode = ('127.0.0.1', 18333)  # testnet
 
