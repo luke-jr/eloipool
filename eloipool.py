@@ -463,7 +463,7 @@ def receiveShare(share):
 		else:
 			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
 		for i in loggersShare:
-			i(share)
+			i.logShare(share)
 
 def newBlockNotification():
 	logging.getLogger('newBlockNotification').info('Received new block notification')
@@ -527,6 +527,11 @@ def stopServers():
 		for fd in s._fd.keys():
 			os.close(fd)
 
+def stopLoggers():
+	for i in loggersShare:
+		if hasattr(i, 'stop'):
+			i.stop()
+
 def saveState(t = None):
 	logger = logging.getLogger('saveState')
 	
@@ -552,6 +557,7 @@ def saveState(t = None):
 def exit():
 	t = time()
 	stopServers()
+	stopLoggers()
 	saveState(t)
 	logging.getLogger('exit').info('Goodbye...')
 	os.kill(os.getpid(), signal.SIGTERM)
@@ -560,6 +566,7 @@ def exit():
 def restart():
 	t = time()
 	stopServers()
+	stopLoggers()
 	saveState(t)
 	logging.getLogger('restart').info('Restarting...')
 	try:
@@ -656,7 +663,7 @@ if __name__ == "__main__":
 			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
 			m = imp.load_module(name, fp, pathname, description)
 			lo = getattr(m, name)(**parameters)
-			loggersShare.append(lo.logShare)
+			loggersShare.append(lo)
 		except:
 			logging.getLogger('sharelogging').error("Error setting up share logger %s: %s", name,  sys.exc_info())
 
