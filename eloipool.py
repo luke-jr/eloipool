@@ -120,7 +120,7 @@ from binascii import b2a_hex
 from copy import deepcopy
 from struct import pack, unpack
 from time import time
-from util import RejectedShare, dblsha, hash2int, swap32
+from util import RejectedShare, dblsha, LEhash2int, swap32
 import jsonrpc
 import threading
 import traceback
@@ -224,7 +224,7 @@ def checkShare(share):
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':
 		raise RejectedShare('H-not-zero')
-	blkhashn = hash2int(blkhash)
+	blkhashn = LEhash2int(blkhash)
 	
 	global networkTarget
 	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')

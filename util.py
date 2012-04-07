@@ -103,9 +103,14 @@ def swap32(b):
 def Bits2Target(bits):
 	return unpack('<L', bits[:3] + b'\0')[0] * 2**(8*(bits[3] - 3))
 
-def hash2int(h):
+def LEhash2int(h):
 	n = unpack('<QQQQ', h)
 	n = (n[3] << 192) | (n[2] << 128) | (n[1] << 64) | n[0]
+	return n
+
+def BEhash2int(h):
+	n = unpack('>QQQQ', h)
+	n = (n[0] << 192) | (n[1] << 128) | (n[2] << 64) | n[3]
 	return n
 
 def tryErr(func, *a, **kw):
