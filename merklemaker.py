@@ -96,6 +96,10 @@ class merkleMaker(threading.Thread):
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
 		
+		if 'coinbaseaux' in MP:
+			for k, v in MP['coinbaseaux'].items():
+				self.CoinbaseAux[k] = bytes.fromhex(v)
+		
 		if 'noncerange' in MP and MP['noncerange'] != '00000000ffffffff':
 			self.logger.critical('Upstream has restricted noncerange; this is not supported!')
 			raise RuntimeError('noncerange restricted')
