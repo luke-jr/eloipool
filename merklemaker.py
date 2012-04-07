@@ -96,6 +96,10 @@ class merkleMaker(threading.Thread):
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		MP = self.access.getmemorypool()
 		
+		if 'noncerange' in MP and MP['noncerange'] != '00000000ffffffff':
+			self.logger.critical('Upstream has restricted noncerange; this is not supported!')
+			raise RuntimeError('noncerange restricted')
+		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
