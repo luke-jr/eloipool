@@ -85,9 +85,10 @@ def SubmitShare(share):
 	a = [data]
 	if 'workid' in mp:
 		a.append({'workid': mp['workid']})
-	if not pool.submitblock(*a):
+	rejReason = pool.submitblock(*a)
+	if not rejReason is None:
 		currentwork[1] = 0
-		raise RejectedShare('pool-rejected')
+		raise RejectedShare('pool-' + rejReason)
 
 server = jsonrpcserver.JSONRPCServer()
 server.getBlockHeader = MakeWork
