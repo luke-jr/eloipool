@@ -46,8 +46,9 @@ def SubmitShare(share):
 	for txn in merkleTree.data:
 		blkdata += txn.data
 	data = b2a_hex(hdr + blkdata).decode('utf8')
-	if not pool.submitblock(data):
-		raise RejectedShare('pool-rejected')
+	rejReason = pool.submitblock(data)
+	if not rejReason is None:
+		raise RejectedShare('pool-' + rejReason)
 
 server = jsonrpcserver.JSONRPCServer()
 server.getBlockHeader = MakeWork
