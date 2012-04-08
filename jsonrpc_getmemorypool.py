@@ -31,7 +31,7 @@ class _getmemorypool:
 	}
 	def doJSON_getmemorypool(self, data=None):
 		if not data is None:
-			return self.doJSON_submitblock(data)
+			return self.doJSON_submitblock(data) is None
 		
 		rv = dict(self.getmemorypool_rv_template)
 		MC = self.server.getBlockTemplate(self.Username)
@@ -64,8 +64,7 @@ class _getmemorypool:
 		try:
 			self.server.receiveShare(share)
 		except RejectedShare as rej:
-			self._JSONHeaders['X-Reject-Reason'] = str(rej)
-			return False
-		return True
+			return str(rej)
+		return None
 
 JSONRPCHandler._register(_getmemorypool)
