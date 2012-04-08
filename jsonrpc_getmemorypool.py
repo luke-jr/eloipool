@@ -65,7 +65,11 @@ class _getmemorypool:
 		try:
 			self.server.receiveShare(share)
 		except RejectedShare as rej:
+			if 'SBB' in self.quirks:
+				return False
 			return str(rej)
+		if 'SBB' in self.quirks:
+			return True
 		return None
 
 JSONRPCHandler._register(_getmemorypool)

@@ -72,6 +72,13 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		self.reqinfo['UA'] = value
 		quirks = self.quirks
 		(UA, v, *x) = value.split(b'/', 1) + [None]
+		
+		# Temporary HACK to keep working with older gmp-proxy
+		# NOTE: This will go away someday.
+		if UA == b'AuthServiceProxy':
+			# SubmitBlock Boolean
+			quirks['SBB'] = None
+		
 		try:
 			if v[0] == b'v': v = v[1:]
 			v = tuple(map(int, v.split(b'.'))) + (0,0,0)
