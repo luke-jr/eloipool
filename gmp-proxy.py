@@ -17,6 +17,12 @@ import threading
 from time import time
 from util import RejectedShare
 
+try:
+	import jsonrpc.authproxy
+	jsonrpc.authproxy.USER_AGENT = 'gmp-proxy/0.1'
+except:
+	pass
+
 pool = jsonrpc.ServiceProxy(sys.argv[1])
 
 worklog = {}
