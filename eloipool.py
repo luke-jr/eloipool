@@ -108,7 +108,12 @@ def blockChanged():
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
-MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
+if config.WorkQueueSizeLongpoll[1]:
+	MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
+else:
+	# Skip makeCoinbaseTxn in case TrackerAddr is not defined ("proxy mode")
+	# NOTE: this is only "valid" because WorkQueueSizeLongpoll[1] (its maximum) is 0, so clearCoinbaseTxn is never really used
+	MM.clearCoinbaseTxn = Txn.new()
 MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged

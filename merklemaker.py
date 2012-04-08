@@ -49,7 +49,8 @@ class merkleMaker(threading.Thread):
 		self.LowestMerkleRoots = self.WorkQueueSizeRegular[1]
 		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
 		self.clearMerkleTree.upstreamTarget = (2 ** 224) - 1
-		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
+		self.clearMerkleTree.coinbasePrefix = b''
+		self.clearMerkleRoots = Queue(max(self.WorkQueueSizeLongpoll[1], 1))
 		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
 		
 		if not hasattr(self, 'WarningDelay'):
@@ -111,7 +112,51 @@ class merkleMaker(threading.Thread):
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = [a for a in map(bytes.fromhex, MP['transactions'])]
 		
-		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
+		if 'coinbasetxn' in MP:
+			mutable = MP.get('mutable', ())
+			tmpltxn = None
+			if 'generation' in mutable:
+				if 'coinbasevalue' in MP:
+					cbval = MP['coinbasevalue']
+				else:
+					# Add up the outputs from coinbasetxn
+					tmpltxn = Txn(MP['coinbasetxn'])
+					tmpltxn.disassemble()
+					cbval = 0
+					for tmploutput in tmpltxn.outputs:
+						cbval += tmploutput[0]
+				cbtxn = self.makeCoinbaseTxn(cbval)
+			else:
+				cbtxn = Txn(bytes.fromhex(MP['coinbasetxn']))
+				cbtxn.disassemble()
+			if 'coinbase' in mutable:
+				# Any coinbase we want
+				cbpfx = b''
+			elif 'coinbase/append' in mutable:
+				if 'generation' in mutable:
+					if tmpltxn is None:
+						tmpltxn = Txn(MP['coinbasetxn'])
+						tmpltxn.disassemble()
+					tmplcb = tmpltxn.getCoinbase()
+					if self.CoinbasePrefix in tmplcb:
+						if not self.CoinbasePrefix:
+							self.logger.critical('Upstream requires coinbase prefix; need a unique CoinbasePrefix configued to cope')
+						elif len(self.CoinbasePrefix) < 4:
+							self.logger.error('CoinbasePrefix appeared in upstream mandatory coinbase data; try making it longer')
+						else:
+							self.logger.error('CoinbasePrefix appeared in upstream mandatory coinbase data; better luck next time?')
+						raise RuntimeError('upstream coinbase contained my prefix')
+					cbpfx = tmplcb
+				else:
+					cbpfx = cbtxn.getCoinbase()
+			else:
+				# Can't change the coinbase data, but we can abuse a generation...
+				# TODO
+				self.logger.critical('Upstream does not allow modifying coinbase data; this is not supported!')
+				raise RuntimeError
+		else:
+			cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
+			cbpfx = b''
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
@@ -130,6 +175,7 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
+		self.clearMerkleTree.coinbasePrefix = newMerkleTree.coinbasePrefix = cbpfx
 		
 		if 'target' in MP:
 			newMerkleTree.upstreamTarget = BEhash2int(bytes.fromhex(MP['target']))
@@ -137,7 +183,7 @@ class merkleMaker(threading.Thread):
 			newMerkleTree.upstreamTarget = Bits2Target(bits)
 		self.clearMerkleTree.upstreamTarget = newMerkleTree.upstreamTarget
 		
-		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot() or newMerkleTree.upstreamTarget != self.currentMerkleTree.upstreamTarget:
+		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot() or newMerkleTree.upstreamTarget != self.currentMerkleTree.upstreamTarget or newMerkleTree.coinbasePrefix != self.currentMerkleTree.coinbasePrefix:
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
@@ -147,19 +193,20 @@ class merkleMaker(threading.Thread):
 			self.needMerkle = 1
 			self.needMerkleSince = now
 	
-	def makeCoinbase(self):
+	def makeCoinbase(self, pfx = b''):
 		now = int(time())
 		if now > _makeCoinbase[0]:
 			_makeCoinbase[0] = now
 			_makeCoinbase[1] = 0
 		else:
 			_makeCoinbase[1] += 1
-		rv = self.CoinbasePrefix
-		rv += pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
+		rv = pack('>L', now) + pack('>Q', _makeCoinbase[1]).lstrip(b'\0')
 		# NOTE: Not using varlenEncode, since this is always guaranteed to be < 100
 		rv = bytes( (len(rv),) ) + rv
+		rv = pfx + self.CoinbasePrefix + rv
 		for v in self.CoinbaseAux.values():
-			rv += v
+			if v not in pfx:
+				rv += v
 		if len(rv) > 100:
 			t = time()
 			if self.overflowed < t - 300:
@@ -173,7 +220,8 @@ class merkleMaker(threading.Thread):
 	
 	def makeMerkleRoot(self, merkleTree):
 		cbtxn = merkleTree.data[0]
-		cb = self.makeCoinbase()
+		cbpfx = merkleTree.coinbasePrefix
+		cb = self.makeCoinbase(cbpfx)
 		cbtxn.setCoinbase(cb)
 		cbtxn.assemble()
 		merkleRoot = merkleTree.merkleRoot()
@@ -206,10 +254,10 @@ class merkleMaker(threading.Thread):
 		
 		# First, update merkle tree if we haven't for a while and aren't crunched for time
 		now = time()
-		if self.nextMerkleUpdate <= now and self.clearMerkleRoots.qsize() > self.WorkQueueSizeLongpoll[0] and len(self.merkleRoots) > self.WorkQueueSizeRegular[0]:
+		if self.nextMerkleUpdate <= now and self.clearMerkleRoots.qsize() >= self.WorkQueueSizeLongpoll[0] and len(self.merkleRoots) >= self.WorkQueueSizeRegular[0]:
 			self.updateMerkleTree()
 		# Next, fill up the longpoll queue first, since it can be used as a failover for the main queue
-		elif not self.clearMerkleRoots.full():
+		elif self.clearMerkleRoots.qsize() < self.WorkQueueSizeLongpoll[1]:
 			self._doing('blank merkle roots')
 			self.clearMerkleRoots.put(self.makeMerkleRoot(self.clearMerkleTree))
 		# Next, fill up the main queue (until they're all current)
@@ -258,5 +306,6 @@ class merkleMaker(threading.Thread):
 	def getMC(self):
 		(prevBlock, bits) = self.currentBlock
 		mt = self.currentMerkleTree
-		cb = self.makeCoinbase()
+		cbpfx = mt.coinbasePrefix
+		cb = self.makeCoinbase(cbpfx)
 		return (None, mt, cb, prevBlock, bits)
