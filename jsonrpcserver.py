@@ -184,6 +184,8 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		# TODO: handle JSON errors
 		data = data.decode('utf8')
 		if longpoll and not data:
+			self.JSONRPCMethod = 'getwork'
+			self._JSONHeaders = {}
 			return self.doLongpoll(1, 'doJSON_getwork', ())
 		try:
 			data = json.loads(data)
