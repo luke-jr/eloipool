@@ -41,6 +41,15 @@ from util import RejectedShare, swap32
 class WithinLongpoll(BaseException):
 	pass
 
+class RequestAlreadyHandled(BaseException):
+	pass
+
+class RequestHandled(RequestAlreadyHandled):
+	pass
+
+class RequestNotHandled(BaseException):
+	pass
+
 # TODO: keepalive/close
 _CheckForDupesHACK = {}
 class JSONRPCHandler(networkserver.SocketHandler):
@@ -59,13 +68,14 @@ class JSONRPCHandler(networkserver.SocketHandler):
 	logger = logging.getLogger('JSONRPCHandler')
 	
 	def sendReply(self, status=200, body=b'', headers=None):
+		if self.replySent:
+			raise RequestAlreadyHandled
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Eligius'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
 		headers.setdefault('Server', 'Eloipool')
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
-			body = b''
 		else:
 			headers['Content-Length'] = len(body)
 		if status == 200:
@@ -79,8 +89,13 @@ class JSONRPCHandler(networkserver.SocketHandler):
 			buf += "%s: %s\r\n" % (k, v)
 		buf += "\r\n"
 		buf = buf.encode('utf8')
+		self.replySent = True
+		if body is None:
+			self.push(buf)
+			return
 		buf += body
 		self.push(buf)
+		raise RequestHandled
 	
 	def doError(self, reason = '', code = 100):
 		reason = json.dumps(reason)
@@ -184,10 +199,17 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
-		else:
-			self.sendReply(200, body=rv, headers=self.LPHeaders)
+			self.reset_request()
+			return
 		
-		self.reset_request()
+		try:
+			self.sendReply(200, body=rv, headers=self.LPHeaders)
+			raise RequestNotHandled
+		except RequestHandled:
+			# Expected
+			pass
+		finally:
+			self.reset_request()
 	
 	def doJSON(self, data):
 		# TODO: handle JSON errors
@@ -209,9 +231,6 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		except Exception as e:
 			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
 			return self.doError(r'Service error: %s' % (e,))
-		if rv is None:
-			# response was already sent (eg, authentication request)
-			return
 		rv = {'id': data['id'], 'error': None, 'result': rv}
 		try:
 			rv = json.dumps(rv)
@@ -337,6 +356,8 @@ class JSONRPCHandler(networkserver.SocketHandler):
 			raise
 		except WithinLongpoll:
 			raise
+		except RequestHandled:
+			raise
 		except:
 			self.logger.error(traceback.format_exc())
 			return self.doError('uncaught error')
@@ -365,7 +386,11 @@ class JSONRPCHandler(networkserver.SocketHandler):
 			data = tuple(map(lambda a: a.strip(), data.split(b':', 1)))
 			method = 'doHeader_' + data[0].decode('ascii').lower()
 			if hasattr(self, method):
-				getattr(self, method)(data[1])
+				try:
+					getattr(self, method)(data[1])
+				except RequestAlreadyHandled:
+					# Ignore multiple errors and such
+					pass
 	
 	def found_terminator(self):
 		if self.reading_headers:
@@ -386,9 +411,13 @@ class JSONRPCHandler(networkserver.SocketHandler):
 		self.set_terminator(None)
 		try:
 			self.handle_request()
+			raise RequestNotHandled
+		except RequestHandled:
 			self.reset_request()
 		except WithinLongpoll:
 			pass
+		except:
+			self.logger.error(traceback.format_exc())
 	
 	def handle_error(self):
 		self.logger.debug(traceback.format_exc())
@@ -460,6 +489,7 @@ class JSONRPCHandler(networkserver.SocketHandler):
 						self.ac_in_buffer = b''
 	
 	def reset_request(self):
+		self.replySent = False
 		self.incoming = []
 		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
 		self.reading_headers = True
