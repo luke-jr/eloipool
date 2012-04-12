@@ -43,6 +43,15 @@ except BaseException as e:
 class AsyncRequest(BaseException):
 	pass
 
+class RequestAlreadyHandled(BaseException):
+	pass
+
+class RequestHandled(RequestAlreadyHandled):
+	pass
+
+class RequestNotHandled(BaseException):
+	pass
+
 class HTTPHandler(networkserver.SocketHandler):
 	HTTPStatus = {
 		200: 'OK',
@@ -57,6 +66,8 @@ class HTTPHandler(networkserver.SocketHandler):
 	default_quirks = {}
 	
 	def sendReply(self, status=200, body=b'', headers=None):
+		if self.replySent:
+			raise RequestAlreadyHandled
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Unknown'))
 		headers = dict(headers) if headers else {}
 		headers['Date'] = formatdate(timeval=mktime(datetime.now().timetuple()), localtime=False, usegmt=True)
@@ -65,7 +76,6 @@ class HTTPHandler(networkserver.SocketHandler):
 			headers.setdefault('X-Source-Code', '/src/')
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
-			body = b''
 		else:
 			headers['Content-Length'] = len(body)
 		for k, v in headers.items():
@@ -73,8 +83,13 @@ class HTTPHandler(networkserver.SocketHandler):
 			buf += "%s: %s\r\n" % (k, v)
 		buf += "\r\n"
 		buf = buf.encode('utf8')
+		self.replySent = True
+		if body is None:
+			self.push(buf)
+			return
 		buf += body
 		self.push(buf)
+		raise RequestHandled
 	
 	def doError(self, reason = '', code = 100, headers = None):
 		if headers is None: headers = {}
@@ -138,7 +153,11 @@ class HTTPHandler(networkserver.SocketHandler):
 			data = tuple(map(lambda a: a.strip(), data.split(b':', 1)))
 			method = 'doHeader_' + data[0].decode('ascii').lower()
 			if hasattr(self, method):
-				getattr(self, method)(data[1])
+				try:
+					getattr(self, method)(data[1])
+				except RequestAlreadyHandled:
+					# Ignore multiple errors and such
+					pass
 	
 	def found_terminator(self):
 		if self.reading_headers:
@@ -159,9 +178,13 @@ class HTTPHandler(networkserver.SocketHandler):
 		self.set_terminator(None)
 		try:
 			self.handle_request()
+			raise RequestNotHandled
+		except RequestHandled:
 			self.reset_request()
 		except AsyncRequest:
 			pass
+		except:
+			self.logger.error(traceback.format_exc())
 	
 	def handle_error(self):
 		self.logger.debug(traceback.format_exc())
@@ -247,6 +270,7 @@ class HTTPHandler(networkserver.SocketHandler):
 			self.sendReply(body=f.read())
 	
 	def reset_request(self):
+		self.replySent = False
 		self.incoming = []
 		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
 		self.reading_headers = True

@@ -161,10 +161,17 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
-		else:
-			self.sendReply(200, body=rv, headers=self.LPHeaders)
+			self.reset_request()
+			return
 		
-		self.reset_request()
+		try:
+			self.sendReply(200, body=rv, headers=self.LPHeaders)
+			raise httpserver.RequestNotHandled
+		except httpserver.RequestHandled:
+			# Expected
+			pass
+		finally:
+			self.reset_request()
 	
 	def _doJSON_i(self, reqid, method, params, longpoll = False):
 		try:
@@ -173,9 +180,6 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
 			efun = self.fmtError if longpoll else self.doError
 			return efun(r'Service error: %s' % (e,))
-		if rv is None:
-			# response was already sent (eg, authentication request)
-			return
 		try:
 			rv.setdefault('submitold', True)
 		except:
@@ -234,6 +238,8 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		except socket.error:
 			raise
 		except WithinLongpoll:
+			raise
+		except httpserver.RequestHandled:
 			raise
 		except:
 			self.logger.error(traceback.format_exc())
