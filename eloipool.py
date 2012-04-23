@@ -424,14 +424,22 @@ def restoreState():
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
 			t = pickle.load(f)
 			if type(t) == tuple:
+				if len(t) > 2:
+					# Future formats, not supported here
+					ver = t[3]
+					# TODO
+				
+				# Old format, from 2012-02-02 to 2012-02-03
 				workLog = t[0]
 				DupeShareHACK = t[1]
 				t = None
 			else:
 				if isinstance(t, dict):
+					# Old format, from 2012-02-03 to 2012-02-03
 					DupeShareHACK = t
 					t = None
 				else:
+					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
 				
 				if s.st_mtime + 120 >= time():
