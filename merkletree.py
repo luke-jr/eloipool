@@ -65,15 +65,40 @@ class MerkleTree:
 	def merkleRoot(self):
 		return self.withFirst(self.data[0])
 
-# MerkleTree test case
-from binascii import b2a_hex
-mt = MerkleTree([None] + [bytes.fromhex(a) for a in [
-	'999d2c8bb6bda0bf784d9ebeb631d711dbbbfe1bc006ea13d6ad0d6a2649a971',
-	'3f92594d5a3d7b4df29d7dd7c46a0dac39a96e751ba0fc9bab5435ea5e22a19d',
-	'a5633f03855f541d8e60a6340fc491d49709dc821f3acb571956a856637adcb6',
-	'28d97c850eaf917a4c76c02474b05b70a197eaefb468d21c22ed110afe8ec9e0',
-]])
-assert(
-	b'82293f182d5db07d08acf334a5a907012bbb9990851557ac0ec028116081bd5a' ==
-	b2a_hex(mt.withFirst(bytes.fromhex('d43b669fb42cfa84695b844c0402d410213faa4f3e66cb7248f688ff19d5e5f7')))
-)
+# MerkleTree tests
+def _test():
+	from binascii import b2a_hex
+	mt = MerkleTree([None] + [bytes.fromhex(a) for a in [
+		'999d2c8bb6bda0bf784d9ebeb631d711dbbbfe1bc006ea13d6ad0d6a2649a971',
+		'3f92594d5a3d7b4df29d7dd7c46a0dac39a96e751ba0fc9bab5435ea5e22a19d',
+		'a5633f03855f541d8e60a6340fc491d49709dc821f3acb571956a856637adcb6',
+		'28d97c850eaf917a4c76c02474b05b70a197eaefb468d21c22ed110afe8ec9e0',
+	]])
+	assert(
+		b'82293f182d5db07d08acf334a5a907012bbb9990851557ac0ec028116081bd5a' ==
+		b2a_hex(mt.withFirst(bytes.fromhex('d43b669fb42cfa84695b844c0402d410213faa4f3e66cb7248f688ff19d5e5f7')))
+	)
+	
+	d = b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+	dh = b"C\xeczW\x9fUa\xa4*~\x967\xadAVg'5\xa6X\xbe'R\x18\x18\x01\xf7#\xba3\x16\xd2"
+	t = Txn(d)
+	m = MerkleTree([t])
+	assert m.merkleRoot() == dh
+	u = Txn.new()
+	u.addInput((b' '*32, 0), b'')
+	u.assemble()
+	m.data.append(u)
+	m.recalculate()
+	mr = b"q\xe1\x9a3'\x0f>\xbfTv\xc8\x90\x81\x802\xe3\xb7u\x96\xddjP4\xe3\x19\xf3\xf0\xc5A4\xc0\xdb"
+	assert m.merkleRoot() == mr
+	step = b'\xb0\x91t\x84%\x9dg\x827\xc5\xbf\x94\xf0"\x94\xafN[\x0c\xeelF\xd9\x1b\x13q\xd3\xdf\x83\xe6\x01g'
+	assert m._steps == [step]
+	m.recalculate(detailed=True)
+	assert m.detail == [dh, step, mr]
+	m = MerkleTree([t.txid, u.txid])
+	assert m.merkleRoot() == mr
+	assert m._steps == [step]
+	m.recalculate(detailed=True)
+	assert m.detail == [dh, step, mr]
+
+_test()
