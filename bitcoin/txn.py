@@ -112,3 +112,31 @@ class Txn:
 	
 	def idhash(self):
 		self.txid = dblsha(self.data)
+
+# Txn tests
+def _test():
+	d = b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+	t = Txn(d)
+	assert t.txid == b"C\xeczW\x9fUa\xa4*~\x967\xadAVg'5\xa6X\xbe'R\x18\x18\x01\xf7#\xba3\x16\xd2"
+	t.disassemble()
+	t.assemble()
+	assert t.data == d
+	assert not t.isCoinbase()
+	t = Txn.new()
+	t.addInput((b' '*32, 0), b'INPUT')
+	t.addOutput(0x10000, b'OUTPUT')
+	t.assemble()
+	assert t.txid == b'>`\x97\xecu\x8e\xb5\xef\x19k\x17d\x96sw\xb1\xf1\x9bO\x1c6\xa0\xbe\xf7N\xed\x13j\xfdHF\x1a'
+	t.disassemble()
+	t.assemble()
+	assert t.txid == b'>`\x97\xecu\x8e\xb5\xef\x19k\x17d\x96sw\xb1\xf1\x9bO\x1c6\xa0\xbe\xf7N\xed\x13j\xfdHF\x1a'
+	assert not t.isCoinbase()
+	t = Txn.new()
+	t.setCoinbase(b'COINBASE')
+	t.addOutput(0x10000, b'OUTPUT')
+	assert t.isCoinbase()
+	assert t.getCoinbase() == b'COINBASE'
+	t.assemble()
+	assert t.txid == b'n\xb9\xdc\xef\xe9\xdb(R\x8dC~-\xef~\x88d\x15+X\x13&\xb7\xbc$\xb1h\xf3g=\x9b~V'
+
+_test()
