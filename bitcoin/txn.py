@@ -84,7 +84,7 @@ class Txn:
 			return data
 	
 	def isCoinbase(self):
-		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.input[0][0] == _nullprev
+		return len(self.inputs) == 1 and self.inputs[0][1] == 0xffffffff and self.inputs[0][0] == _nullprev
 	
 	def getCoinbase(self):
 		return self.inputs[0][1]
