@@ -442,7 +442,7 @@ def restoreState():
 					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
 				
-				if s.st_mtime + 120 >= time():
+				if t + 120 >= time():
 					workLog = pickle.load(f)
 				else:
 					logger.debug('Skipping restore of expired workLog')
