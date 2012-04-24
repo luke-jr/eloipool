@@ -22,6 +22,7 @@ import logging
 import networkserver
 import os
 import re
+import stat
 from struct import pack
 from time import mktime, time
 import traceback
@@ -40,6 +41,7 @@ try:
 		if len(_SourceFiles) < 2:
 			raise RuntimeError('Unknown error')
 		_SourceFiles = tuple(x.encode('utf8') for x in _SourceFiles)
+		_GitDesc = os.popen('cd \'%s\' && git describe --dirty --always' % (_srcdir,)).read().strip().encode('utf8')
 except BaseException as e:
 	logging.getLogger('Licensing').critical('Error getting list of source files! AGPL requires this. To fix, be sure you are using git for Eloipool.\n' + traceback.format_exc())
 	import sys
@@ -267,10 +269,37 @@ class HTTPHandler(networkserver.SocketHandler):
 		if p == b'':
 			# List of files
 			body = b'<html><head><title>Source Code</title></head><body>\t\n'
+			body += b'\t<a href="tar">(tar archive of all files)</a><br><br>\n'
 			for f in _SourceFiles:
 				body += b'\t<a href="' + f + b'">\n' + f + b'\n\t</a><br>\n'
 			body += b'\t</body></html>\n'
 			return self.sendReply(body=body, headers={'Content-Type':'text/html'})
+		if p == b'tar':
+			body = bytearray()
+			dn = b'eloipool-' + _GitDesc + b'/'
+			for f in _SourceFiles:
+				fs = f.decode('utf8')
+				fstat = os.lstat(fs)
+				islink = stat.S_ISLNK(fstat.st_mode)
+				if islink:
+					data = b''
+					link = os.readlink(f)
+				else:
+					with open("%s/%s" % (_srcdir, fs), 'rb') as ff:
+						data = ff.read()
+					link = b''
+				h = bytearray()
+				f = dn + f
+				h += f + bytes(max(0, 100 - len(f)))
+				h += ('%07o' % (fstat.st_mode,)[-7:]).encode('utf8') + b'\0'
+				h += bytes(16)
+				h += ('%012o%012o' % (fstat.st_size, fstat.st_mtime)).encode('utf8')
+				h += b'        '  # chksum
+				h += b'2' if islink else b'0'
+				h += link + bytes(max(0, 355 - len(link)))
+				h[148:156] = ('%07o' % (sum(h),)).encode('utf8') + b'\0'
+				body += h + data + bytes(512 - ((fstat.st_size % 512) or 512))
+			self.sendReply(body=body, headers={'Content-Type':'application/x-tar'})
 		if p not in _SourceFiles:
 			return self.sendReply(404)
 		ct = 'text/plain'
