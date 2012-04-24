@@ -107,9 +107,8 @@ class HTTPHandler(networkserver.SocketHandler):
 			valid = self.checkAuthentication(un, pw)
 		except:
 			return self.doError('Error checking authorization')
-		if not valid:
-			return self.doAuthenticate()
-		self.Username = un.decode('utf8')
+		if valid:
+			self.Username = un.decode('utf8')
 	
 	def doHeader_connection(self, value):
 		if value == b'close':
