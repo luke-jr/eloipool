@@ -273,9 +273,12 @@ class HTTPHandler(networkserver.SocketHandler):
 			return self.sendReply(body=body, headers={'Content-Type':'text/html'})
 		if p not in _SourceFiles:
 			return self.sendReply(404)
+		ct = 'text/plain'
+		if p[-3:] == b'.py': ct = 'application/x-python'
+		elif p[-11:] == b'.py.example': ct = 'application/x-python'
 		p = p.decode('utf8')
 		with open("%s/%s" % (_srcdir, p), 'rb') as f:
-			self.sendReply(body=f.read())
+			self.sendReply(body=f.read(), headers={'Content-Type':ct})
 	
 	def reset_request(self):
 		self.replySent = False
