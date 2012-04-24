@@ -33,8 +33,13 @@ try:
 		_SourceFiles = None
 	else:
 		_SourceFiles = os.popen('cd \'%s\' && git ls-files' % (_srcdir,)).read().split('\n')
+		try:
+			_SourceFiles.remove('')
+		except ValueError:
+			pass
 		if len(_SourceFiles) < 2:
 			raise RuntimeError('Unknown error')
+		_SourceFiles = tuple(x.encode('utf8') for x in _SourceFiles)
 except BaseException as e:
 	logging.getLogger('Licensing').critical('Error getting list of source files! AGPL requires this. To fix, be sure you are using git for Eloipool.\n' + traceback.format_exc())
 	import sys
@@ -261,10 +266,14 @@ class HTTPHandler(networkserver.SocketHandler):
 		p = self.path[5:]
 		if p == b'':
 			# List of files
-			return self.sendReply(body=("\n".join(_SourceFiles).encode('utf8')) + b"\n")
-		p = p.decode('utf8')
+			body = b'<html><head><title>Source Code</title></head><body>\t\n'
+			for f in _SourceFiles:
+				body += b'\t<a href="' + f + b'">\n' + f + b'\n\t</a><br>\n'
+			body += b'\t</body></html>\n'
+			return self.sendReply(body=body, headers={'Content-Type':'text/html'})
 		if p not in _SourceFiles:
 			return self.sendReply(404)
+		p = p.decode('utf8')
 		with open("%s/%s" % (_srcdir, p), 'rb') as f:
 			self.sendReply(body=f.read())
 	
