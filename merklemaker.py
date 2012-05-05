@@ -21,6 +21,7 @@ from collections import deque
 from queue import Queue
 import jsonrpc
 import logging
+from math import log
 from merkletree import MerkleTree
 from struct import pack
 import threading
@@ -114,6 +115,33 @@ class merkleMaker(threading.Thread):
 			self.logger.debug('Trimming transaction for SigOp limit')
 			txnlistsz -= countSigOps(txnlist.pop())
 		
+		txncount = len(txnlist)
+		idealtxncount = txncount
+		if hasattr(self, 'Greedy') and self.Greedy and 'transactionfees' in MP:
+			feeinfo = MP['transactionfees']
+			feeinfo.insert(0, -MP['coinbasevalue'])
+			# Aim to cut off extra zero-fee transactions on the end
+			# NOTE: not cutting out ones intermixed, in case of dependencies
+			feeinfoLen = len(feeinfo)
+			if feeinfoLen > txncount:
+				feeinfoLen = txncount
+			elif feeinfoLen < txncount:
+				idealtxncount -= txncount - feeinfoLen
+			for i in range(feeinfoLen - 1, 0, -1):
+				if feeinfo[i]:
+					break
+				idealtxncount -= 1
+		
+		pot = 2**int(log(idealtxncount, 2))
+		if pot < idealtxncount:
+			if pot * 2 <= txncount:
+				pot *= 2
+			else:
+				pot = idealtxncount
+				POTWarn = "Making merkle tree with %d transactions (ideal: %d; max: %d)" % (pot, idealtxncount, txncount)
+				self._floodWarning(now, 'Non-POT', lambda: POTWarn, POTWarn)
+		txnlist = txnlist[:pot]
+		
 		txnlist = [a for a in map(Txn, txnlist[1:])]
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
@@ -172,15 +200,20 @@ class merkleMaker(threading.Thread):
 		self._doing_i = 1
 		self._doing_s = now
 	
-	def _floodWarning(self, now, wid, wmsgf):
+	def _floodWarning(self, now, wid, wmsgf, doin = True):
+		if doin is True:
+			doin = self._doing_last
+			def a(f = wmsgf):
+				return lambda: "%s (doing %s)" % (f(), doin)
+			wmsgf = a()
 		winfo = self.lastWarning.setdefault(wid, [0, None])
 		(lastTime, lastDoing) = winfo
-		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and self._doing_last == lastDoing:
+		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and doin == lastDoing:
 			return
 		winfo[0] = now
-		nowDoing = self._doing_last
+		nowDoing = doin
 		winfo[1] = nowDoing
-		self.logger.warning("%s (doing %s)" % (wmsgf(), nowDoing))
+		self.logger.warning(wmsgf())
 	
 	def merkleMaker_I(self):
 		global now
