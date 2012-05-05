@@ -228,6 +228,9 @@ class merkleMaker(threading.Thread):
 			self.clearMerkleRoots.put(self.makeMerkleRoot(self.clearMerkleTree))
 		# Next, fill up the main queue (until they're all current)
 		elif len(self.merkleRoots) < self.WorkQueueSizeRegular[1] or self.merkleRoots[0][1] != self.currentMerkleTree:
+			if self.needMerkle == 1 and len(self.merkleRoots) >= self.WorkQueueSizeRegular[1]:
+				self.onBlockUpdate()
+				self.needMerkle = False
 			self._doing('regular merkle roots')
 			self.merkleRoots.append(self.makeMerkleRoot(self.currentMerkleTree))
 		else:
