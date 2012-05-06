@@ -59,6 +59,16 @@ class SocketHandler:
 		self.handle_readbuf()
 	
 	def push(self, data):
+		if not len(self.wbuf):
+			# Try to send as much as we can immediately
+			try:
+				bs = self.socket.send(data)
+			except:
+				# Chances are we'll fail later, but anyway...
+				bs = 0
+			data = data[bs:]
+			if not len(data):
+				return
 		self.wbuf += data
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
