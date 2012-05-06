@@ -165,6 +165,7 @@ class NetworkListener:
 	def handle_read(self):
 		server = self.server
 		conn, addr = self.socket.accept()
+		conn.setblocking(False)
 		h = server.RequestHandlerClass(server, conn, addr)
 	
 	def handle_error(self):
