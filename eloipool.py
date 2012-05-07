@@ -78,6 +78,7 @@ MM.start()
 
 from binascii import b2a_hex
 from struct import pack, unpack
+import threading
 from time import time
 from util import RejectedShare, dblsha, hash2int
 
@@ -173,13 +174,19 @@ def receiveShare(share):
 	checkShare(share)
 	# TODO
 
-def newBlockNotification(signum, frame):
+def newBlockNotification():
 	MM.updateMerkleTree()
 	# TODO: Force RESPOND TO LONGPOLLS?
 	pass
 
+def newBlockNotificationSIGNAL(signum, frame):
+	# Use a new thread, in case the signal handler is called with locks held
+	thr = threading.Thread(target=newBlockNotification, name='newBlockNotification via signal %s' % (signum,))
+	thr.daemon = True
+	thr.start()
+
 from signal import signal, SIGUSR1
-signal(SIGUSR1, newBlockNotification)
+signal(SIGUSR1, newBlockNotificationSIGNAL)
 
 
 from jsonrpcserver import JSONRPCServer
