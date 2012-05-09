@@ -168,10 +168,12 @@ def assembleBlock(blkhdr, txlist):
 def blockSubmissionThread(payload):
 	while True:
 		try:
-			UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
+			rv = UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
 			break
 		except:
 			pass
+	if not rv:
+		RaiseRedFlags('Upstream rejected block!')
 
 def checkShare(share):
 	shareTime = share['time'] = time()
