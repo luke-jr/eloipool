@@ -28,6 +28,7 @@ class merkleMaker(threading.Thread):
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
 		
 		self.nextMerkleUpdate = 0
+		self.lastWarning = {}
 		global now
 		now = time()
 		self.updateMerkleTree()
@@ -52,14 +53,16 @@ class merkleMaker(threading.Thread):
 		txnlist = map(a2b_hex, MP['transactions'])
 		
 		txnlistsz = sum(map(len, txnlist))
-		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
-			self.logger.debug('Trimming transaction for size limit')
-			txnlistsz -= len(txnlist.pop())
+		if txnlistsz > 934464:  # 1 "MB" limit - 64 KB breathing room
+			# FIXME: Try to safely truncate the block
+			W = 'Making blocks over 1 MB size limit (%d bytes)' % (txnlistsz,)
+			self._floodWarning(now, 'SizeLimit', lambda: W, W, logf=self.logger.error)
 		
 		txnlistsz = sum(map(countSigOps, txnlist))
-		while txnlistsz > 19488:  # TODO: 20k limit - 0x200 breathing room
-			self.logger.debug('Trimming transaction for SigOp limit')
-			txnlistsz -= countSigOps(txnlist.pop())
+		if txnlistsz > 19488:  # 20k limit - 0x200 breathing room
+			# FIXME: Try to safely truncate the block
+			W = 'Making blocks over 20k SigOp limit (%d)' % (txnlistsz,)
+			self._floodWarning(now, 'SigOpLimit', lambda: W, W, logf=self.logger.error)
 		
 		txnlist = map(Txn, txnlist)
 		txnlist = [None] + list(txnlist)
@@ -86,6 +89,23 @@ class merkleMaker(threading.Thread):
 		self._doing_last = what
 		self._doing_i = 1
 		self._doing_s = now
+	
+	def _floodWarning(self, now, wid, wmsgf, doin = True, logf = None):
+		if doin is True:
+			doin = self._doing_last
+			def a(f = wmsgf):
+				return lambda: "%s (doing %s)" % (f(), doin)
+			wmsgf = a()
+		winfo = self.lastWarning.setdefault(wid, [0, None])
+		(lastTime, lastDoing) = winfo
+		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and doin == lastDoing:
+			return
+		winfo[0] = now
+		nowDoing = doin
+		winfo[1] = nowDoing
+		if logf is None:
+			logf = self.logger.warning
+		logf(wmsgf())
 	
 	def merkleMaker_I(self):
 		global now
