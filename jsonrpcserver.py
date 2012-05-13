@@ -227,7 +227,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if not self.method in (b'GET', b'POST'):
 			return self.sendReply(405)
 		if not self.path in self.JSONRPCURIs:
-			if self.path[:5] == b'/src/':
+			if isinstance(self.path, bytes) and self.path[:5] == b'/src/':
 				return self.handle_src_request()
 			return self.sendReply(404)
 		if not self.Username:
