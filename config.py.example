@@ -28,7 +28,7 @@ TrackerAddr = 'mrsP7M31efGkQHXb7nRiWLDjfV2M8oakf2'  # testnet
 
 # Coinbaser command to control reward delegation
 # NOTE: This example donates 1% of block rewards to Luke-Jr for Eloipool development
-CoinbaserCmd = 'echo "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU\\n"'
+CoinbaserCmd = 'echo -e "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU"'
 
 ### Settings relating to upstream data providers
 
