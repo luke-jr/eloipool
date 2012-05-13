@@ -92,8 +92,7 @@ DupeShareHACK = {}
 
 server = None
 def updateBlocks():
-	if server:
-		server.wakeLongpoll()
+	server.wakeLongpoll()
 
 def blockChanged():
 	global DupeShareHACK
@@ -113,7 +112,6 @@ MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
-MM.start()
 
 
 from binascii import b2a_hex
@@ -546,6 +544,8 @@ if __name__ == "__main__":
 	if hasattr(config, 'TrustedForwarders'):
 		server.TrustedForwarders = config.TrustedForwarders
 	server.ServerName = config.ServerName
+	
+	MM.start()
 	
 	restoreState()
 	
