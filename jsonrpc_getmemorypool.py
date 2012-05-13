@@ -20,6 +20,8 @@ from jsonrpcserver import JSONRPCHandler
 from time import time
 from util import RejectedShare
 
+_NoParams = {}
+
 class _getmemorypool:
 	getmemorypool_rv_template = {
 		'longpoll': '/LP',
@@ -30,14 +32,27 @@ class _getmemorypool:
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 		'version': 1,
 	}
-	def doJSON_getmemorypool(self, data=None):
-		if not data is None:
-			return self.doJSON_submitblock(data) is None
+	def doJSON_getmemorypool(self, params = _NoParams, sp = _NoParams):
+		if isinstance(params, str):
+			if sp.get('mode', 'submit') != 'submit':
+				raise AttributeError('getmemorypool mode "%s" not supported' % (sp['mode'],))
+			rr = self.doJSON_submitblock(params, sp)
+			if sp is _NoParams:
+				return rr is None
+			return rr
+		elif not sp is _NoParams:
+			raise TypeError('getmemorypool() takes at most 2 positional arguments (%d given)' % (len(a),))
+		elif params.get('mode', 'template') != 'template':
+			raise AttributeError('getmemorypool mode "%s" not supported' % (sp['mode'],))
+		
+		if 'longpollid' in params:
+			self.processLP(params['longpollid'])
 		
 		rv = dict(self.getmemorypool_rv_template)
 		MC = self.server.getBlockTemplate(self.Username)
 		(dummy, merkleTree, cb, prevBlock, bits) = MC
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
+		rv['longpollid'] = str(self.server.LPId)
 		tl = []
 		for txn in merkleTree.data[1:]:
 			tl.append(b2a_hex(txn.data).decode('ascii'))
@@ -54,7 +69,7 @@ class _getmemorypool:
 		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
 		return rv
 	
-	def doJSON_submitblock(self, data):
+	def doJSON_submitblock(self, data, params = _NoParams):
 		data = bytes.fromhex(data)
 		share = {
 			'data': data[:80],

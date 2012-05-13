@@ -99,6 +99,13 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def doHeader_x_mining_extensions(self, value):
 		self.extensions = value.decode('ascii').lower().split(' ')
 	
+	def processLP(self, lpid):
+		lpw = self.server.LPId
+		if isinstance(lpid, str):
+			if lpw != lpid:
+				return
+		self.doLongpoll()
+	
 	def doLongpoll(self, *a):
 		timeNow = time()
 		
@@ -176,6 +183,9 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def _doJSON_i(self, reqid, method, params, longpoll = False):
 		try:
 			rv = getattr(self, method)(*params)
+		except WithinLongpoll:
+			self._LPCall = (reqid, method, params)
+			raise
 		except Exception as e:
 			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
 			efun = self.fmtError if longpoll else self.doError
@@ -197,12 +207,14 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		# TODO: handle JSON errors
 		data = data.decode('utf8')
 		if longpoll and not data:
+			self.JSONRPCId = jsonid = 1
 			self.JSONRPCMethod = 'getwork'
 			self._JSONHeaders = {}
 			return self.doLongpoll(1, 'doJSON_getwork', ())
 		try:
 			data = json.loads(data)
 			method = str(data['method']).lower()
+			self.JSONRPCId = jsonid = data['id']
 			self.JSONRPCMethod = method
 			method = 'doJSON_' + method
 		except ValueError:
@@ -217,7 +229,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		procfun = self._doJSON_i
 		if longpoll and not params:
 			procfun = self.doLongpoll
-		return procfun(data['id'], method, params)
+		return procfun(jsonid, method, params)
 	
 	def handle_close(self):
 		self.cleanupLP()
@@ -267,6 +279,8 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		
 		self.SecretUser = None
 		
+		self._LPId = 0
+		self.LPId = '%d' % (time(),)
 		self.LPRequest = False
 		self._LPClients = {}
 		self._LPWaitTime = time() + 15
@@ -282,6 +296,8 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 			self.logger.info('Ignoring longpoll attempt while another is waiting')
 			return
 		self.LPRequest = 1
+		self._LPId += 1
+		self.LPId = '%d %d' % (time(), self._LPId)
 		self.wakeup()
 	
 	def _LPsch(self):
