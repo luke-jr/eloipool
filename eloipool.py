@@ -182,7 +182,7 @@ def blockSubmissionThread(payload, share):
 	payload = b2a_hex(payload).decode('ascii')
 	while True:
 		try:
-			reason = UpstreamBitcoindJSONRPC.submitblock(payload)
+			reason = UpstreamBitcoindJSONRPC.getmemorypool(payload, {})
 			break
 		except:
 			pass
