@@ -47,6 +47,13 @@ import jsonrpc
 UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(config.UpstreamURI)
 
 
+try:
+	import jsonrpc.authproxy
+	jsonrpc.authproxy.USER_AGENT = 'Eloipool/0.1'
+except:
+	pass
+
+
 from bitcoin.script import BitcoinScript
 from bitcoin.txn import Txn
 from base58 import b58decode
