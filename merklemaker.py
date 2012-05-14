@@ -32,6 +32,20 @@ from util import BEhash2int, Bits2Target
 _makeCoinbase = [0, 0]
 
 class merkleMaker(threading.Thread):
+	OldGMP = None
+	GMPReq = {
+		'capabilities': [
+			'coinbasevalue',
+			'coinbase/append',
+			'coinbase',
+			'generation',
+			'time',
+			'transactions/remove',
+			'prevblock',
+		],
+		'tx': 'obj',
+	}
+	
 	def __init__(self, *a, **k):
 		super().__init__(*a, **k)
 		self.daemon = True
@@ -96,7 +110,27 @@ class merkleMaker(threading.Thread):
 		global now
 		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
-		MP = self.access.getmemorypool()
+		
+		try:
+			MP = self.access.getmemorypool(self.GMPReq)
+			self.OldGMP = False
+			oMP = None
+		except:
+			MP = False
+			try:
+				oMP = self.access.getmemorypool()
+			except:
+				oMP = False
+			if oMP is False:
+				# This way, we get the error from the BIP22 call if the old one fails too
+				raise
+		if MP is False:
+			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
+			if not self.OldGMP:
+				self.OldGMP = True
+				self.logger.warning('Upstream server is not BIP 22 compliant')
+			MP = oMP or self.access.getmemorypool()
+		
 		
 		if 'coinbaseaux' in MP:
 			for k, v in MP['coinbaseaux'].items():
@@ -110,8 +144,21 @@ class merkleMaker(threading.Thread):
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
 			self.updateBlock(prevBlock, bits, _HBH=(MP['previousblockhash'], MP['bits']))
+		
+		txnlist = MP['transactions']
+		if len(txnlist) and isinstance(txnlist[0], dict):
+			txninfo = txnlist
+			txnlist = tuple(a['data'] for a in txnlist)
+			txninfo.insert(0, {
+			})
+		elif 'transactionfees' in MP:
+			# Backward compatibility with pre-BIP22 gmp_fees branch
+			txninfo = [{'fee':a} for a in MP['transactionfees']]
+		else:
+			# Backward compatibility with pre-BIP22 hex-only (bitcoind <0.7, Eloipool <future)
+			txninfo = [{}] * len(txnlist)
 		# TODO: cache Txn or at least txid from previous merkle roots?
-		txnlist = [a for a in map(bytes.fromhex, MP['transactions'])]
+		txnlist = [a for a in map(bytes.fromhex, txnlist)]
 		
 		if 'coinbasetxn' in MP:
 			mutable = MP.get('mutable', ())
@@ -176,18 +223,11 @@ class merkleMaker(threading.Thread):
 		
 		txncount = len(txnlist)
 		idealtxncount = txncount
-		if hasattr(self, 'Greedy') and self.Greedy and 'transactionfees' in MP:
-			feeinfo = MP['transactionfees']
-			feeinfo.insert(0, -MP['coinbasevalue'])
+		if hasattr(self, 'Greedy') and self.Greedy:
 			# Aim to cut off extra zero-fee transactions on the end
 			# NOTE: not cutting out ones intermixed, in case of dependencies
-			feeinfoLen = len(feeinfo)
-			if feeinfoLen > txncount:
-				feeinfoLen = txncount
-			elif feeinfoLen < txncount:
-				idealtxncount -= txncount - feeinfoLen
-			for i in range(feeinfoLen - 1, 0, -1):
-				if feeinfo[i]:
+			for i in range(len(txninfo) - 1, 0, -1):
+				if 'fee' not in txninfo[i] or txninfo[i]['fee']:
 					break
 				idealtxncount -= 1
 		
