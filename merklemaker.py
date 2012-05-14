@@ -253,7 +253,13 @@ class merkleMaker(threading.Thread):
 			newMerkleTree.upstreamTarget = Bits2Target(bits)
 		self.clearMerkleTree.upstreamTarget = newMerkleTree.upstreamTarget
 		
-		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot() or newMerkleTree.upstreamTarget != self.currentMerkleTree.upstreamTarget or newMerkleTree.coinbasePrefix != self.currentMerkleTree.coinbasePrefix:
+		haveUpdate = newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot()
+		for k in ('upstreamTarget', 'coinbasePrefix'):
+			if haveUpdate:
+				break
+			haveUpdate = getattr(newMerkleTree, k) != getattr(self.currentMerkleTree, k)
+		
+		if haveUpdate:
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
