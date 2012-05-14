@@ -31,6 +31,20 @@ import traceback
 _makeCoinbase = [0, 0]
 
 class merkleMaker(threading.Thread):
+	OldGMP = None
+	GMPReq = {
+		'capabilities': [
+			'coinbasevalue',
+			'coinbase/append',
+			'coinbase',
+			'generation',
+			'time',
+			'transactions/remove',
+			'prevblock',
+		],
+		'tx': 'hex',
+	}
+	
 	def __init__(self, *a, **k):
 		super().__init__(*a, **k)
 		self.daemon = True
@@ -92,7 +106,27 @@ class merkleMaker(threading.Thread):
 		global now
 		self.logger.debug('Polling bitcoind for memorypool')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
-		MP = self.access.getmemorypool()
+		
+		try:
+			MP = self.access.getmemorypool(self.GMPReq)
+			self.OldGMP = False
+			oMP = None
+		except:
+			MP = False
+			try:
+				oMP = self.access.getmemorypool()
+			except:
+				oMP = False
+			if oMP is False:
+				# This way, we get the error from the BIP22 call if the old one fails too
+				raise
+		if MP is False:
+			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
+			if not self.OldGMP:
+				self.OldGMP = True
+				self.logger.warning('Upstream server is not BIP 22 compliant')
+			MP = oMP or self.access.getmemorypool()
+		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
