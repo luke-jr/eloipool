@@ -21,6 +21,7 @@ from collections import deque
 from queue import Queue
 import jsonrpc
 import logging
+from math import log
 from merkletree import MerkleTree
 from struct import pack
 import threading
@@ -162,14 +163,43 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn.data)
 		
 		txnlistsz = sum(map(len, txnlist))
-		while txnlistsz > 934464:  # TODO: 1 "MB" limit - 64 KB breathing room
-			self.logger.debug('Trimming transaction for size limit')
-			txnlistsz -= len(txnlist.pop())
+		if txnlistsz > 934464:  # 1 "MB" limit - 64 KB breathing room
+			# FIXME: Try to safely truncate the block
+			W = 'Making blocks over 1 MB size limit (%d bytes)' % (txnlistsz,)
+			self._floodWarning(now, 'SizeLimit', lambda: W, W, logf=self.logger.error)
 		
 		txnlistsz = sum(map(countSigOps, txnlist))
-		while txnlistsz > 19488:  # TODO: 20k limit - 0x200 breathing room
-			self.logger.debug('Trimming transaction for SigOp limit')
-			txnlistsz -= countSigOps(txnlist.pop())
+		if txnlistsz > 19488:  # 20k limit - 0x200 breathing room
+			# FIXME: Try to safely truncate the block
+			W = 'Making blocks over 20k SigOp limit (%d)' % (txnlistsz,)
+			self._floodWarning(now, 'SigOpLimit', lambda: W, W, logf=self.logger.error)
+		
+		txncount = len(txnlist)
+		idealtxncount = txncount
+		if hasattr(self, 'Greedy') and self.Greedy and 'transactionfees' in MP:
+			feeinfo = MP['transactionfees']
+			feeinfo.insert(0, -MP['coinbasevalue'])
+			# Aim to cut off extra zero-fee transactions on the end
+			# NOTE: not cutting out ones intermixed, in case of dependencies
+			feeinfoLen = len(feeinfo)
+			if feeinfoLen > txncount:
+				feeinfoLen = txncount
+			elif feeinfoLen < txncount:
+				idealtxncount -= txncount - feeinfoLen
+			for i in range(feeinfoLen - 1, 0, -1):
+				if feeinfo[i]:
+					break
+				idealtxncount -= 1
+		
+		pot = 2**int(log(idealtxncount, 2))
+		if pot < idealtxncount:
+			if pot * 2 <= txncount:
+				pot *= 2
+			else:
+				pot = idealtxncount
+				POTWarn = "Making merkle tree with %d transactions (ideal: %d; max: %d)" % (pot, idealtxncount, txncount)
+				self._floodWarning(now, 'Non-POT', lambda: POTWarn, POTWarn)
+		txnlist = txnlist[:pot]
 		
 		txnlist = [a for a in map(Txn, txnlist[1:])]
 		txnlist.insert(0, cbtxn)
@@ -239,15 +269,22 @@ class merkleMaker(threading.Thread):
 		self._doing_i = 1
 		self._doing_s = now
 	
-	def _floodWarning(self, now, wid, wmsgf):
+	def _floodWarning(self, now, wid, wmsgf, doin = True, logf = None):
+		if doin is True:
+			doin = self._doing_last
+			def a(f = wmsgf):
+				return lambda: "%s (doing %s)" % (f(), doin)
+			wmsgf = a()
 		winfo = self.lastWarning.setdefault(wid, [0, None])
 		(lastTime, lastDoing) = winfo
-		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and self._doing_last == lastDoing:
+		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and doin == lastDoing:
 			return
 		winfo[0] = now
-		nowDoing = self._doing_last
+		nowDoing = doin
 		winfo[1] = nowDoing
-		self.logger.warning("%s (doing %s)" % (wmsgf(), nowDoing))
+		if logf is None:
+			logf = self.logger.warning
+		logf(wmsgf())
 	
 	def merkleMaker_I(self):
 		global now
@@ -262,6 +299,9 @@ class merkleMaker(threading.Thread):
 			self.clearMerkleRoots.put(self.makeMerkleRoot(self.clearMerkleTree))
 		# Next, fill up the main queue (until they're all current)
 		elif len(self.merkleRoots) < self.WorkQueueSizeRegular[1] or self.merkleRoots[0][1] != self.currentMerkleTree:
+			if self.needMerkle == 1 and len(self.merkleRoots) >= self.WorkQueueSizeRegular[1]:
+				self.onBlockUpdate()
+				self.needMerkle = False
 			self._doing('regular merkle roots')
 			self.merkleRoots.append(self.makeMerkleRoot(self.currentMerkleTree))
 		else:

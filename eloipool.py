@@ -99,8 +99,7 @@ DupeShareHACK = {}
 
 server = None
 def updateBlocks():
-	if server:
-		server.wakeLongpoll()
+	server.wakeLongpoll()
 
 def blockChanged():
 	global DupeShareHACK
@@ -125,16 +124,15 @@ MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
-MM.start()
 
 
 from binascii import b2a_hex
 from copy import deepcopy
 from struct import pack, unpack
+import threading
 from time import time
 from util import PendingUpstream, RejectedShare, dblsha, LEhash2int, swap32
 import jsonrpc
-import threading
 import traceback
 
 gotwork = None
@@ -365,14 +363,20 @@ def receiveShare(share):
 		if not share.get('upstreamRejectReason', None) is PendingUpstream:
 			logShare(share)
 
-def newBlockNotification(signum, frame):
+def newBlockNotification():
 	logging.getLogger('newBlockNotification').info('Received new block notification')
 	MM.updateMerkleTree()
 	# TODO: Force RESPOND TO LONGPOLLS?
 	pass
 
+def newBlockNotificationSIGNAL(signum, frame):
+	# Use a new thread, in case the signal handler is called with locks held
+	thr = threading.Thread(target=newBlockNotification, name='newBlockNotification via signal %s' % (signum,))
+	thr.daemon = True
+	thr.start()
+
 from signal import signal, SIGUSR1
-signal(SIGUSR1, newBlockNotification)
+signal(SIGUSR1, newBlockNotificationSIGNAL)
 
 
 import os
@@ -473,17 +477,25 @@ def restoreState():
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
 			t = pickle.load(f)
 			if type(t) == tuple:
+				if len(t) > 2:
+					# Future formats, not supported here
+					ver = t[3]
+					# TODO
+				
+				# Old format, from 2012-02-02 to 2012-02-03
 				workLog = t[0]
 				DupeShareHACK = t[1]
 				t = None
 			else:
 				if isinstance(t, dict):
+					# Old format, from 2012-02-03 to 2012-02-03
 					DupeShareHACK = t
 					t = None
 				else:
+					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
 				
-				if s.st_mtime + 120 >= time():
+				if t + 120 >= time():
 					workLog = pickle.load(f)
 				else:
 					logger.debug('Skipping restore of expired workLog')
@@ -579,6 +591,8 @@ if __name__ == "__main__":
 	if hasattr(config, 'TrustedForwarders'):
 		server.TrustedForwarders = config.TrustedForwarders
 	server.ServerName = config.ServerName
+	
+	MM.start()
 	
 	restoreState()
 	

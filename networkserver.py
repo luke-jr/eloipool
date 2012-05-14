@@ -54,9 +54,21 @@ class SocketHandler:
 			data = bytes(str, self.encoding)
 		self.ac_in_buffer = self.ac_in_buffer + data
 		
+		self.server.lastReadbuf = self.ac_in_buffer
+		
 		self.handle_readbuf()
 	
 	def push(self, data):
+		if not len(self.wbuf):
+			# Try to send as much as we can immediately
+			try:
+				bs = self.socket.send(data)
+			except:
+				# Chances are we'll fail later, but anyway...
+				bs = 0
+			data = data[bs:]
+			if not len(data):
+				return
 		self.wbuf += data
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
@@ -163,6 +175,7 @@ class NetworkListener:
 	def handle_read(self):
 		server = self.server
 		conn, addr = self.socket.accept()
+		conn.setblocking(False)
 		h = server.RequestHandlerClass(server, conn, addr)
 	
 	def handle_error(self):
@@ -247,7 +260,9 @@ class AsyncSocketServer:
 	def serve_forever(self):
 		self.running = True
 		while self.keepgoing:
+			self.doing = 'pre-schedule'
 			self.pre_schedule()
+			self.doing = 'schedule'
 			if len(self._sch):
 				timeNow = time()
 				while True:
@@ -274,14 +289,17 @@ class AsyncSocketServer:
 			else:
 				timeout = -1
 			
+			self.doing = 'poll'
 			try:
 				events = self._epoll.poll(timeout=timeout)
 			except (IOError, select.error):
 				continue
 			except:
 				self.logger.error(traceback.format_exc())
+			self.doing = 'events'
 			for (fd, e) in events:
 				o = self._fd[fd]
+				self.lastHandler = o
 				try:
 					if e & EPOLL_READ:
 						o.handle_read()
@@ -292,4 +310,5 @@ class AsyncSocketServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_error)
+		self.doing = None
 		self.running = False

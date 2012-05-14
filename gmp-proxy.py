@@ -17,6 +17,12 @@ import threading
 from time import time
 from util import RejectedShare
 
+try:
+	import jsonrpc.authproxy
+	jsonrpc.authproxy.USER_AGENT = 'gmp-proxy/0.1'
+except:
+	pass
+
 pool = jsonrpc.ServiceProxy(sys.argv[1])
 
 worklog = {}
@@ -88,9 +94,10 @@ def SubmitShare(share):
 	a = [data]
 	if 'workid' in mp:
 		a.append({'workid': mp['workid']})
-	if not pool.submitblock(*a):
+	rejReason = pool.submitblock(*a)
+	if not rejReason is None:
 		currentwork[1] = 0
-		raise RejectedShare('pool-rejected')
+		raise RejectedShare('pool-' + rejReason)
 
 def HandleLP():
 	global server
