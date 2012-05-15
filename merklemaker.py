@@ -397,7 +397,7 @@ class merkleMaker(threading.Thread):
 		self._figureTimeRules(MP, newMerkleTree)
 		
 		haveUpdate = newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot()
-		for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset'):
+		for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset', 'jobExpire'):
 			v = getattr(newMerkleTree, k, None)
 			if v == getattr(self.currentMerkleTree, k, None):
 				continue
