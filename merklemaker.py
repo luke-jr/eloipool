@@ -110,10 +110,14 @@ class merkleMaker(threading.Thread):
 		self.onBlockChange()
 	
 	def _trimBlock(self, MP, txnlist, txninfo, floodn, msgf):
+		if 'transactions' not in MP['mutable'] and 'transactions/remove' not in MP['mutable']:
+			raise self._floodCritical(now, floodn, doin=msgf('transactions not mutable'))
 		fee = txninfo[-1].get('fee', None)
 		if fee is None:
 			raise self._floodCritical(now, floodn, doin=msgf('fees unknown'))
 		if fee:
+			if 'generation' not in MP['mutable'] and 'coinbasetxn' in MP:
+				raise self._floodCritical(now, floodn, doin=msgf('generation not mutable'))
 			# FIXME: coinbasevalue is *not* guaranteed to exist here
 			MP['coinbasevalue'] -= fee
 		
@@ -138,6 +142,14 @@ class merkleMaker(threading.Thread):
 		
 		POTMode = getattr(self, 'POT', 1)
 		txncount = len(txnlist) + 1
+		if POTMode and 'transactions' not in MP['mutable'] and 'transactions/remove' not in MP['mutable']:
+			POTMode = 0
+			if txncount != 2**int(log(txncount, 2)):
+				self._floodWarning(now, 'No-POT', doin='Upstream does not allow transactions/remove mutation, required for POT mode')
+		if POTMode > 1 and 'generation' not in MP['mutable'] and 'coinbasetxn' in MP:
+			POTMode = 1
+			if txncount != 2**int(log(txncount, 2)):
+				self._floodWarning(now, 'No-Aggressive-POT', doin='Upstream does not allow generation mutation, required for aggressive POT mode')
 		if POTMode:
 			feetxncount = txncount
 			for i in range(txncount - 2, -1, -1):
@@ -292,10 +304,17 @@ class merkleMaker(threading.Thread):
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = [a for a in map(bytes.fromhex, txnlist)]
 		
+		if 'mutable' not in MP:
+			if 'time' in MP:
+				# Pre-BIP22, assume bitcoind
+				MP['mutable'] = ('time', 'transactions', 'prevblock')
+			else:
+				MP['mutable'] = ()
+		mutable = MP['mutable']
+		
 		self._makeBlockSafe(MP, txnlist, txninfo)
 		
 		if 'coinbasetxn' in MP:
-			mutable = MP.get('mutable', ())
 			tmpltxn = None
 			if 'generation' in mutable:
 				if 'coinbasevalue' in MP:
@@ -516,8 +535,20 @@ def _test():
 	global now
 	now = 1337039788
 	MM = merkleMaker()
+	reallogger = MM.logger
+	class fakelogger:
+		LO = False
+		def critical(self, *a):
+			if self.LO > 1: return
+			reallogger.critical(*a)
+		def warning(self, *a):
+			if self.LO: return
+			reallogger.warning(*a)
+	MM.logger = fakelogger()
 	class NMTClass:
 		pass
+	
+	# _figureTimeRules tests
 	def FTR(MP):
 		NMT = NMTClass
 		MM._figureTimeRules(MP, NMT)
@@ -623,6 +654,7 @@ def _test():
 	from copy import deepcopy
 	MP = {
 		'coinbasevalue':50,
+		'mutable':[],
 	}
 	txnlist = [b'\0', b'\x01', b'\x02']
 	txninfo = [{'fee':0, 'sigops':1}, {'fee':5, 'sigops':10000}, {'fee':0, 'sigops':10001}]
@@ -638,6 +670,8 @@ def _test():
 			assert LO < 2  # An expected error wasn't thrown
 		return m
 	MM.POT = 0
+	MBS(2)  # Can't remove transactions
+	MP['mutable'].append('transactions')
 	assert MBS() == (MP, txnlist[:2], txninfo[:2])
 	txninfo[2]['fee'] = 1
 	MPx = deepcopy(MP)
@@ -646,5 +680,11 @@ def _test():
 	txninfo[2]['sigops'] = 1
 	assert MBS(1) == (MP, txnlist, txninfo)
 	txninfo[2]['sigops'] = 10001
+	MP['coinbasetxn'] = b''
+	MBS(2)  # Can't change generation
+	MP['mutable'].append('generation')
+	MPx = deepcopy(MP)
+	MPx['coinbasevalue'] -= 1
+	assert MBS(1) == (MPx, txnlist[:2], txninfo[:2])
 
 _test()
