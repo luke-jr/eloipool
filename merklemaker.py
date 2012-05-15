@@ -52,6 +52,8 @@ class merkleMaker(threading.Thread):
 		self.CoinbasePrefix = b''
 		self.CoinbaseAux = {}
 		self.isOverflowed = False
+		self.lastWarning = {}
+		self.MinimumTxnUpdateWait = 5
 		self.overflowed = 0
 	
 	def _prepare(self):
@@ -74,7 +76,6 @@ class merkleMaker(threading.Thread):
 		
 		self.lastMerkleUpdate = 0
 		self.nextMerkleUpdate = 0
-		self.lastWarning = {}
 		global now
 		now = time()
 		self.updateMerkleTree()
@@ -101,6 +102,65 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (newBlock, bits)
 		self.needMerkle = 2
 		self.onBlockChange()
+	
+	def _trimBlock(self, MP, txnlist, txninfo, floodn, msgf):
+		fee = txninfo[-1].get('fee', None)
+		if fee is None:
+			raise self._floodCritical(now, floodn, doin=msgf('fees unknown'))
+		if fee:
+			# FIXME: coinbasevalue is *not* guaranteed to exist here
+			MP['coinbasevalue'] -= fee
+		
+		txnlist[-1:] = ()
+		txninfo[-1:] = ()
+		
+		return True
+	
+	def _makeBlockSafe(self, MP, txnlist, txninfo):
+		blocksize = sum(map(len, txnlist)) + 80
+		while blocksize > 934464:  # 1 "MB" limit - 64 KB breathing room
+			txnsize = len(txnlist[-1])
+			self._trimBlock(MP, txnlist, txninfo, 'SizeLimit', lambda x: 'Making blocks over 1 MB size limit (%d bytes; %s)' % (blocksize, x))
+			blocksize -= txnsize
+		
+		# NOTE: This check doesn't work at all without BIP22 transaction obj format
+		blocksigops = sum(a.get('sigops', 0) for a in txninfo)
+		while blocksigops > 19488:  # 20k limit - 0x200 breathing room
+			txnsigops = txninfo[-1]['sigops']
+			self._trimBlock(MP, txnlist, txninfo, 'SigOpLimit', lambda x: 'Making blocks over 20k SigOp limit (%d; %s)' % (blocksigops, x))
+			blocksigops -= txnsigops
+		
+		POTMode = getattr(self, 'POT', 1)
+		txncount = len(txnlist) + 1
+		if POTMode:
+			feetxncount = txncount
+			for i in range(txncount - 2, -1, -1):
+				if 'fee' not in txninfo[i] or txninfo[i]['fee']:
+					break
+				feetxncount -= 1
+			
+			if getattr(self, 'Greedy', None):
+				# Aim to cut off extra zero-fee transactions on the end
+				# NOTE: not cutting out ones intermixed, in case of dependencies
+				idealtxncount = feetxncount
+			else:
+				idealtxncount = txncount
+			
+			pot = 2**int(log(idealtxncount, 2))
+			if pot < idealtxncount:
+				if pot * 2 <= txncount:
+					pot *= 2
+				elif pot >= feetxncount:
+					pass
+				elif POTMode > 1:
+					# Trim even transactions with fees
+					MP['coinbasevalue'] -= sum(a['fee'] for a in txninfo[pot-1:])
+				else:
+					pot = idealtxncount
+					self._floodWarning(now, 'Non-POT', doin='Making merkle tree with %d transactions (ideal: %d; max: %d)' % (pot, idealtxncount, txncount))
+			pot -= 1
+			txnlist[pot:] = ()
+			txninfo[pot:] = ()
 	
 	def updateMerkleTree(self):
 		global now
@@ -147,42 +207,12 @@ class merkleMaker(threading.Thread):
 		# TODO: cache Txn or at least txid from previous merkle roots?
 		txnlist = [a for a in map(bytes.fromhex, txnlist)]
 		
+		self._makeBlockSafe(MP, txnlist, txninfo)
+		
 		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
-		
-		txnlistsz = sum(map(len, txnlist))
-		if txnlistsz > 934464:  # 1 "MB" limit - 64 KB breathing room
-			# FIXME: Try to safely truncate the block
-			W = 'Making blocks over 1 MB size limit (%d bytes)' % (txnlistsz,)
-			self._floodWarning(now, 'SizeLimit', lambda: W, W, logf=self.logger.error)
-		
-		txnlistsz = sum(map(countSigOps, txnlist))
-		if txnlistsz > 19488:  # 20k limit - 0x200 breathing room
-			# FIXME: Try to safely truncate the block
-			W = 'Making blocks over 20k SigOp limit (%d)' % (txnlistsz,)
-			self._floodWarning(now, 'SigOpLimit', lambda: W, W, logf=self.logger.error)
-		
-		txncount = len(txnlist)
-		idealtxncount = txncount
-		if hasattr(self, 'Greedy') and self.Greedy:
-			# Aim to cut off extra zero-fee transactions on the end
-			# NOTE: not cutting out ones intermixed, in case of dependencies
-			for i in range(len(txninfo) - 1, 0, -1):
-				if 'fee' not in txninfo[i] or txninfo[i]['fee']:
-					break
-				idealtxncount -= 1
-		
-		pot = 2**int(log(idealtxncount, 2))
-		if pot < idealtxncount:
-			if pot * 2 <= txncount:
-				pot *= 2
-			else:
-				pot = idealtxncount
-				POTWarn = "Making merkle tree with %d transactions (ideal: %d; max: %d)" % (pot, idealtxncount, txncount)
-				self._floodWarning(now, 'Non-POT', lambda: POTWarn, POTWarn)
-		txnlist = txnlist[:pot]
 		
 		txnlist = [a for a in map(Txn, txnlist[1:])]
 		txnlist.insert(0, cbtxn)
@@ -242,7 +272,7 @@ class merkleMaker(threading.Thread):
 		self._doing_i = 1
 		self._doing_s = now
 	
-	def _floodWarning(self, now, wid, wmsgf, doin = True, logf = None):
+	def _floodWarning(self, now, wid, wmsgf = None, doin = True, logf = None):
 		if doin is True:
 			doin = self._doing_last
 			def a(f = wmsgf):
@@ -257,7 +287,7 @@ class merkleMaker(threading.Thread):
 		winfo[1] = nowDoing
 		if logf is None:
 			logf = self.logger.warning
-		logf(wmsgf())
+		logf(wmsgf() if wmsgf else doin)
 	
 	def merkleMaker_I(self):
 		global now
@@ -321,3 +351,51 @@ class merkleMaker(threading.Thread):
 		mt = self.currentMerkleTree
 		cb = self.makeCoinbase()
 		return (None, mt, cb, prevBlock, bits)
+
+# merkleMaker tests
+def _test():
+	global now
+	now = 1337039788
+	MM = merkleMaker()
+	reallogger = MM.logger
+	class fakelogger:
+		LO = False
+		def critical(self, *a):
+			if self.LO > 1: return
+			reallogger.critical(*a)
+		def warning(self, *a):
+			if self.LO: return
+			reallogger.warning(*a)
+	MM.logger = fakelogger()
+	class NMTClass:
+		pass
+	
+	# _makeBlockSafe tests
+	from copy import deepcopy
+	MP = {
+		'coinbasevalue':50,
+	}
+	txnlist = [b'\0', b'\x01', b'\x02']
+	txninfo = [{'fee':0, 'sigops':1}, {'fee':5, 'sigops':10000}, {'fee':0, 'sigops':10001}]
+	def MBS(LO = 0):
+		m = deepcopy( (MP, txnlist, txninfo) )
+		MM.logger.LO = LO
+		try:
+			MM._makeBlockSafe(*m)
+		except:
+			if LO < 2:
+				raise
+		else:
+			assert LO < 2  # An expected error wasn't thrown
+		return m
+	MM.POT = 0
+	assert MBS() == (MP, txnlist[:2], txninfo[:2])
+	txninfo[2]['fee'] = 1
+	MPx = deepcopy(MP)
+	MPx['coinbasevalue'] -= 1
+	assert MBS() == (MPx, txnlist[:2], txninfo[:2])
+	txninfo[2]['sigops'] = 1
+	assert MBS(1) == (MP, txnlist, txninfo)
+	txninfo[2]['sigops'] = 10001
+
+_test()
