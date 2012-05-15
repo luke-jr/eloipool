@@ -126,6 +126,24 @@ class merkleMaker(threading.Thread):
 		
 		return True
 	
+	def _APOT(self, txninfopot, MP, POTInfo):
+		feeTxnsTrimmed = 0
+		feesTrimmed = 0
+		for txn in txninfopot:
+			if txn.get('fee') is None:
+				self._floodWarning(now, 'APOT-No-Fees', doin='Upstream didn\'t provide fee information required for aggressive POT', logf=self.logger.info)
+				return
+			if not txn['fee']:
+				continue
+			feesTrimmed += txn['fee']
+			feeTxnsTrimmed += 1
+		MP['coinbasevalue'] -= feesTrimmed
+		
+		POTInfo[2] = [feeTxnsTrimmed, feesTrimmed]
+		self._floodWarning(now, 'POT-Trimming-Fees', doin='Aggressive POT trimming %d transactions with %d.%08d BTC total fees' % (feeTxnsTrimmed, feesTrimmed//100000000, feesTrimmed % 100000000), logf=self.logger.debug)
+		
+		return True
+	
 	def _makeBlockSafe(self, MP, txnlist, txninfo):
 		blocksize = sum(map(len, txnlist)) + 80
 		while blocksize > 934464:  # 1 "MB" limit - 64 KB breathing room
@@ -165,17 +183,19 @@ class merkleMaker(threading.Thread):
 				idealtxncount = txncount
 			
 			pot = 2**int(log(idealtxncount, 2))
+			POTInfo = MP['POTInfo'] = [[idealtxncount, feetxncount, txncount], [pot, None], None]
 			if pot < idealtxncount:
 				if pot * 2 <= txncount:
 					pot *= 2
 				elif pot >= feetxncount:
 					pass
-				elif POTMode > 1:
-					# Trim even transactions with fees
-					MP['coinbasevalue'] -= sum(a['fee'] for a in txninfo[pot-1:])
+				elif POTMode > 1 and self._APOT(txninfo[pot-1:], MP, POTInfo):
+					# Trimmed even transactions with fees
+					pass
 				else:
 					pot = idealtxncount
 					self._floodWarning(now, 'Non-POT', doin='Making merkle tree with %d transactions (ideal: %d; max: %d)' % (pot, idealtxncount, txncount))
+			POTInfo[1][1] = pot
 			pot -= 1
 			txnlist[pot:] = ()
 			txninfo[pot:] = ()
@@ -388,6 +408,7 @@ class merkleMaker(threading.Thread):
 				setattr(self.clearMerkleTree, k, v)
 		
 		if haveUpdate:
+			newMerkleTree.POTInfo = MP.get('POTInfo')
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
