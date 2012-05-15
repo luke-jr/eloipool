@@ -243,11 +243,10 @@ def checkShare(share):
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
+		RBDs.append( deepcopy( (data, txlist, share.get('blkdata', None), workMerkleTree) ) )
 		if not moden:
-			RBDs.append( deepcopy( (data, txlist) ) )
 			payload = assembleBlock(data, txlist)
 		else:
-			RBDs.append( deepcopy( (data, txlist, share['blkdata']) ) )
 			payload = share['data'] + share['blkdata']
 		logfunc('Real block payload: %s' % (payload,))
 		RBPs.append(payload)
