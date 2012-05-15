@@ -24,6 +24,7 @@ except:
 	logging.getLogger('jsonrpc_getwork').warning('Error importing \'midstate\' module; work will not provide midstates')
 	midstate = None
 from struct import pack
+from time import time
 from util import RejectedShare, swap32
 
 _CheckForDupesHACK = {}
@@ -59,6 +60,15 @@ class _getwork:
 		if midstate and 'midstate' not in self.extensions and 'midstate' not in self.quirks:
 			h = midstate.SHA256(hdr)[:8]
 			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
+		
+		if x:
+			(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = x[0]
+			now = time()
+			expires = min(120, merkleTree.jobExpire - now)
+			# Clients without expire extension assume 60 seconds of roll time
+			if expires >= 60:
+				self._JSONHeaders['X-Roll-NTime'] = 'expire=%d' % (expires,)
+		
 		return rv
 	
 	def doJSON_submitwork(self, datax):

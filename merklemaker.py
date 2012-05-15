@@ -30,6 +30,7 @@ import traceback
 from util import BEhash2int, Bits2Target
 
 _makeCoinbase = [0, 0]
+inf = float('inf')
 
 class merkleMaker(threading.Thread):
 	OldGMP = None
@@ -65,6 +66,7 @@ class merkleMaker(threading.Thread):
 		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
 		self.clearMerkleTree.upstreamTarget = (2 ** 224) - 1
 		self.clearMerkleTree.coinbasePrefix = b''
+		self.clearMerkleTree.timeOffset = 0
 		self.clearMerkleRoots = Queue(max(self.WorkQueueSizeLongpoll[1], 1))
 		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
 		
@@ -105,6 +107,78 @@ class merkleMaker(threading.Thread):
 		self.clearMerkleTree.upstreamTarget = max(self.clearMerkleTree.upstreamTarget, Bits2Target(bits))
 		self.needMerkle = 2
 		self.onBlockChange()
+	
+	# This is quite long, but basically it just defines the time limits for a job...
+	def _figureTimeRules(self, MP, newMerkleTree):
+		global now
+		
+		intnow = int(now)
+		if 'expires' in MP:
+			expire = intnow + MP['expires'] - 10
+		else:
+			# This way, we won't bother updating the merkle tree too often and won't "run out" of work
+			expire = intnow
+			expire -= expire % 60
+			expire += 120
+		newMerkleTree.jobExpire = expire
+		
+		if 'curtime' not in MP: MP['curtime'] = intnow
+		stime = MP['curtime']
+		timeOffset = newMerkleTree.timeOffset = stime - intnow
+		sexpire = expire + timeOffset
+		if abs(timeOffset) > 300:
+			W = 'Time difference between upstream and local over a minute (%d seconds)' % (timeOffset,)
+			self._floodWarning(now, 'TimeOffset', lambda: W, W)
+		
+		if 'maxtimeoff' in MP:
+			# Relative maximum time
+			maxtimeOffset = MP['maxtimeoff']
+			if maxtimeOffset < 0:
+				raise self._floodCritical(now, 'maxtimeoff < 0', doin='Upstream maxtimeoff is negative; this is not supported!')
+			if maxtimeOffset > sexpire + 7200:
+				# We'd never go allow this new anyway, so make comparison easier
+				maxtimeOffset = 7200
+		else:
+			maxtimeOffset = 7200
+		newMerkleTree.maxtimeOffset = maxtimeOffset
+		if 'maxtime' in MP:
+			# Absolute maximum time
+			maxtime = MP['maxtime']
+			if maxtime > sexpire + maxtimeOffset:
+				# We'd never allow this new anyway, so make comparison easier
+				newMerkleTree.maxtime = inf
+			elif maxtime < stime:
+				raise self._floodCritical(now, 'maxtime < curtime', doin='Upstream maxtime is before curtime; this is not supported!')
+			else:
+				newMerkleTree.maxtime = maxtime
+		else:
+			newMerkleTree.maxtime = inf
+		if 'mintimeoff' in MP:
+			# Relative minimum time
+			mintimeOffset = MP['mintimeoff']
+			if mintimeOffset <= -300:
+				# We'd never allow this old anyway, so make comparison easier
+				mintimeOffset = -300
+			elif mintimeOffset > 0:
+				raise self._floodCritical(now, 'mintimeoff > 0', doin='Upstream mintimeoff is positive; this is not supported!')
+			else:
+				mintimeOffset = mintimeOffset
+		else:
+			mintimeOffset = -300
+		newMerkleTree.mintimeOffset = mintimeOffset
+		if 'mintime' in MP:
+			# Absolute minimum time
+			mintime = MP['mintime']
+			if mintime <= stime + mintimeOffset:
+				# We'd never allow this old anyway, so make comparison easier
+				newMerkleTree.mintime = 0
+			elif mintime > stime:
+				raise self._floodCritical(now, 'mintime > curtime', doin='Upstream mintime is after curtime; this is not supported!')
+			else:
+				newMerkleTree.mintime = mintime
+		else:
+			# Undefined. Use curtime.
+			newMerkleTree.mintime = stime
 	
 	def updateMerkleTree(self):
 		global now
@@ -149,8 +223,6 @@ class merkleMaker(threading.Thread):
 		if len(txnlist) and isinstance(txnlist[0], dict):
 			txninfo = txnlist
 			txnlist = tuple(a['data'] for a in txnlist)
-			txninfo.insert(0, {
-			})
 		elif 'transactionfees' in MP:
 			# Backward compatibility with pre-BIP22 gmp_fees branch
 			txninfo = [{'fee':a} for a in MP['transactionfees']]
@@ -208,6 +280,7 @@ class merkleMaker(threading.Thread):
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
+		txninfo.insert(0, {})
 		
 		txnlistsz = sum(map(len, txnlist))
 		if txnlistsz > 934464:  # 1 "MB" limit - 64 KB breathing room
@@ -245,25 +318,33 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
-		self.clearMerkleTree.coinbasePrefix = newMerkleTree.coinbasePrefix = cbpfx
+		newMerkleTree.coinbasePrefix = cbpfx
 		
 		if 'target' in MP:
 			newMerkleTree.upstreamTarget = BEhash2int(bytes.fromhex(MP['target']))
 		else:
 			newMerkleTree.upstreamTarget = Bits2Target(bits)
-		self.clearMerkleTree.upstreamTarget = newMerkleTree.upstreamTarget
+		
+		self._figureTimeRules(MP, newMerkleTree)
 		
 		haveUpdate = newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot()
-		for k in ('upstreamTarget', 'coinbasePrefix'):
-			if haveUpdate:
-				break
-			haveUpdate = getattr(newMerkleTree, k) != getattr(self.currentMerkleTree, k)
+		for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset'):
+			v = getattr(newMerkleTree, k, None)
+			if v == getattr(self.currentMerkleTree, k, None):
+				continue
+			haveUpdate = True
+			if v is None:
+				delattr(self.clearMerkleTree, k)
+			else:
+				setattr(self.clearMerkleTree, k, v)
 		
 		if haveUpdate:
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
+		noLaterThan = newMerkleTree.jobExpire - getattr(self, 'ExpectedUpstreamLatency', 0) - getattr(self, 'MinimumJobExpiration', 64)
+		self.nextMerkleUpdate = min(self.nextMerkleUpdate, noLaterThan)
 		
 		if self.needMerkle == 2:
 			self.needMerkle = 1
@@ -315,7 +396,7 @@ class merkleMaker(threading.Thread):
 		self._doing_i = 1
 		self._doing_s = now
 	
-	def _floodWarning(self, now, wid, wmsgf, doin = True, logf = None):
+	def _floodWarning(self, now, wid, wmsgf = None, doin = True, logf = None):
 		if doin is True:
 			doin = self._doing_last
 			def a(f = wmsgf):
@@ -330,7 +411,11 @@ class merkleMaker(threading.Thread):
 		winfo[1] = nowDoing
 		if logf is None:
 			logf = self.logger.warning
-		logf(wmsgf())
+		logf(wmsgf() if wmsgf else doin)
+	
+	def _floodCritical(self, now, wid, wmsgf = None, doin = True):
+		self._floodWarning(now, wid, wmsgf, doin, self.logger.critical)
+		return RuntimeError(wid)
 	
 	def merkleMaker_I(self):
 		global now
@@ -395,3 +480,113 @@ class merkleMaker(threading.Thread):
 		cbpfx = mt.coinbasePrefix
 		cb = self.makeCoinbase(cbpfx)
 		return (None, mt, cb, prevBlock, bits)
+
+# merkleMaker tests
+def _test():
+	global now
+	now = 1337039788
+	MM = merkleMaker()
+	class NMTClass:
+		pass
+	def FTR(MP):
+		NMT = NMTClass
+		MM._figureTimeRules(MP, NMT)
+		H = {}
+		for k in dir(NMT):
+			if k[0] == '_':
+				continue
+			H[k] = getattr(NMT, k)
+		return H
+	assert FTR({}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'expires': 65,
+	}) == {
+		'jobExpire': 1337039843,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'expires': 65,
+		'curtime': 1337039789,
+	}) == {
+		'jobExpire': 1337039843,
+		'timeOffset': 1,
+		'mintime': now + 1,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'mintime': 1337039780,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': 1337039780,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'mintimeoff': -100,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -100,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'mintime': now - 200,
+		'mintimeoff': -100,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': 0,
+		'mintimeOffset': -100,
+		'maxtime': inf,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'maxtime': 1337039880,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -300,
+		'maxtime': 1337039880,
+		'maxtimeOffset': 7200,
+	}
+	assert FTR({
+		'maxtimeoff': 100,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 100,
+	}
+	assert FTR({
+		'maxtime': 1337039985,
+		'maxtimeoff': 100,
+	}) == {
+		'jobExpire': 1337039880,
+		'timeOffset': 0,
+		'mintime': now,
+		'mintimeOffset': -300,
+		'maxtime': inf,
+		'maxtimeOffset': 100,
+	}
+
+_test()

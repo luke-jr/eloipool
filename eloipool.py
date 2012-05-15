@@ -151,7 +151,8 @@ def submitGotwork(info):
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
-	timestamp = pack('<L', int(time()))
+	timestamp = time() + merkleTree.timeOffset
+	timestamp = pack('<L', int(timestamp))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return (hdr, workLog[username][merkleRoot])
@@ -312,12 +313,14 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
-	shareTimestamp = unpack('<L', data[68:72])[0]
+	# FIXME: enforce lower expiration times? (right now, it's pretty difficult to hit ones under 120 seconds anyway)
 	if shareTime < issueT - 120:
 		raise RejectedShare('stale-work')
-	if shareTimestamp < shareTime - 300:
+	shareTimeX = shareTime + workMerkleTree.timeOffset
+	shareTimestamp = unpack('<L', data[68:72])[0]
+	if shareTimestamp < max(shareTimeX + workMerkleTree.mintimeOffset, workMerkleTree.mintime):
 		raise RejectedShare('time-too-old')
-	if shareTimestamp > shareTime + 7200:
+	if shareTimestamp > min(shareTimeX + workMerkleTree.maxtimeOffset, workMerkleTree.maxtime):
 		raise RejectedShare('time-too-new')
 	
 	if moden:
