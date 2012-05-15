@@ -112,6 +112,8 @@ class merkleMaker(threading.Thread):
 	def _trimBlock(self, MP, txnlist, txninfo, floodn, msgf):
 		if 'transactions' not in MP['mutable'] and 'transactions/remove' not in MP['mutable']:
 			raise self._floodCritical(now, floodn, doin=msgf('transactions not mutable'))
+		if txninfo[-1].get('required', False) or MP['txrequired'] >= len(txnlist):
+			raise self._floodCritical(now, floodn, doin=msgf('would-be-trimmed transaction is required by upstream'))
 		fee = txninfo[-1].get('fee', None)
 		if fee is None:
 			raise self._floodCritical(now, floodn, doin=msgf('fees unknown'))
@@ -126,13 +128,17 @@ class merkleMaker(threading.Thread):
 		
 		return True
 	
-	def _APOT(self, txninfopot, MP, POTInfo):
+	def _APOT(self, txninfo, pot, MP, POTInfo):
+		if pot <= MP['txrequired']:
+			self._floodWarning(now, 'APOT-Req', doin='Aggressive POT blocked by upstream required transaction', logf=self.logger.info)
 		feeTxnsTrimmed = 0
 		feesTrimmed = 0
-		for txn in txninfopot:
+		for txn in txninfo[pot-1:]:
 			if txn.get('fee') is None:
 				self._floodWarning(now, 'APOT-No-Fees', doin='Upstream didn\'t provide fee information required for aggressive POT', logf=self.logger.info)
 				return
+			if txn.get('required', False):
+				self._floodWarning(now, 'APOT-Req', doin='Aggressive POT blocked by upstream required transaction', logf=self.logger.info)
 			if not txn['fee']:
 				continue
 			feesTrimmed += txn['fee']
@@ -145,6 +151,8 @@ class merkleMaker(threading.Thread):
 		return True
 	
 	def _makeBlockSafe(self, MP, txnlist, txninfo):
+		MP.setdefault('txrequired', 0)
+		
 		blocksize = sum(map(len, txnlist)) + 80
 		while blocksize > 934464:  # 1 "MB" limit - 64 KB breathing room
 			txnsize = len(txnlist[-1])
@@ -170,8 +178,11 @@ class merkleMaker(threading.Thread):
 				self._floodWarning(now, 'No-Aggressive-POT', doin='Upstream does not allow generation mutation, required for aggressive POT mode')
 		if POTMode:
 			feetxncount = txncount
-			for i in range(txncount - 2, -1, -1):
+			txreq = MP['txrequired']
+			for i in range(txncount - 2, txreq - 1, -1):
 				if 'fee' not in txninfo[i] or txninfo[i]['fee']:
+					break
+				if txninfo[i].get('required', False):
 					break
 				feetxncount -= 1
 			
@@ -189,7 +200,7 @@ class merkleMaker(threading.Thread):
 					pot *= 2
 				elif pot >= feetxncount:
 					pass
-				elif POTMode > 1 and self._APOT(txninfo[pot-1:], MP, POTInfo):
+				elif POTMode > 1 and self._APOT(txninfo, pot, MP, POTInfo):
 					# Trimmed even transactions with fees
 					pass
 				else:
@@ -676,6 +687,7 @@ def _test():
 	MP = {
 		'coinbasevalue':50,
 		'mutable':[],
+		'txrequired':0,
 	}
 	txnlist = [b'\0', b'\x01', b'\x02']
 	txninfo = [{'fee':0, 'sigops':1}, {'fee':5, 'sigops':10000}, {'fee':0, 'sigops':10001}]
