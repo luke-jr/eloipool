@@ -119,7 +119,6 @@ class NetworkListener:
 		self.server = server
 		self.server_address = server_address
 		self.address_family = address_family
-		self.TrustedForwarders = ()
 		tryErr(self.setup_socket, server_address, Logger=self.logger, ErrorMsg=server_address)
 	
 	def _makebind_py(self, server_address):
@@ -198,6 +197,8 @@ class AsyncSocketServer:
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
+		
+		self.TrustedForwarders = ()
 		
 		if self.waker:
 			(r, w) = os.pipe()
