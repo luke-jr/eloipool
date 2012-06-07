@@ -351,13 +351,21 @@ SAVE_STATE_FILENAME = 'eloipool.worklog'
 def stopServers():
 	logger = logging.getLogger('stopServers')
 	
+	if hasattr(stopServers, 'already'):
+		logger.debug('Already tried to stop servers before')
+		return
+	stopServers.already = True
+	
 	logger.info('Stopping servers...')
 	global bcnode, server
 	servers = (bcnode, server)
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
-		s.wakeup()
+		try:
+			s.wakeup()
+		except:
+			logger.error('Failed to stop server %s\n%s' % (s, traceback.format_exc()))
 	i = 0
 	while True:
 		sl = []
