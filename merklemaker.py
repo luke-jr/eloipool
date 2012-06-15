@@ -387,6 +387,8 @@ def _test():
 		def warning(self, *a):
 			if self.LO: return
 			reallogger.warning(*a)
+		def debug(self, *a):
+			pass
 	MM.logger = fakelogger()
 	class NMTClass:
 		pass
@@ -408,6 +410,8 @@ def _test():
 				raise
 		else:
 			assert LO < 2  # An expected error wasn't thrown
+		if 'POTInfo' in m[0]:
+			del m[0]['POTInfo']
 		return m
 	MM.POT = 0
 	assert MBS() == (MP, txnlist[:2], txninfo[:2])
@@ -417,6 +421,12 @@ def _test():
 	assert MBS() == (MPx, txnlist[:2], txninfo[:2])
 	txninfo[2]['sigops'] = 1
 	assert MBS(1) == (MP, txnlist, txninfo)
-	txninfo[2]['sigops'] = 10001
+	# APOT tests
+	MM.POT = 2
+	txnlist.append(b'\x03')
+	txninfo.append({'fee':1, 'sigops':0})
+	MPx = deepcopy(MP)
+	MPx['coinbasevalue'] -= 1
+	assert MBS() == (MPx, txnlist[:3], txninfo[:3])
 
 _test()
