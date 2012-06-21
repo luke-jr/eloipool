@@ -307,7 +307,7 @@ def checkShare(share):
 		
 		# Filter out known "I support" flags, to prevent exploits
 		for ff in (b'/P2SH/', b'NOP2SH', b'p2sh/CHV', b'p2sh/NOCHV'):
-			if coinbase.find(ff) > cbpreLen - len(ff):
+			if coinbase.find(ff) > max(-1, cbpreLen - len(ff)):
 				raise RejectedShare('bad-cb-flag')
 		
 		if len(coinbase) > 100:
