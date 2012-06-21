@@ -138,10 +138,17 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if myip not in self.server.LPTracking:
 			self.server.LPTracking[myip] = 0
 		self.server.LPTracking[myip] += 1
+		
+		myuser = self.Username
+		if myuser not in self.server.LPTrackingByUser:
+			self.server.LPTrackingByUser[myuser] = 0
+		self.server.LPTrackingByUser[myuser] += 1
+		
 		return self.server.LPTracking[myip]
 	
 	def LPUntrack(self):
 		self.server.LPTracking[self.remoteHost] -= 1
+		self.server.LPTrackingByUser[self.Username] -= 1
 	
 	def cleanupLP(self):
 		# Called when the connection is closed
@@ -286,6 +293,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		self._LPWaitTime = time() + 15
 		
 		self.LPTracking = {}
+		self.LPTrackingByUser = {}
 	
 	def pre_schedule(self):
 		if self.LPRequest == 1:
@@ -340,4 +348,10 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		tmp = list(self.LPTracking.keys())
 		tmp.sort(key=lambda k: self.LPTracking[k])
 		for jerk in map(lambda k: (k, self.LPTracking[k]), tmp[-n:]):
+			print(jerk)
+	
+	def TopLPersByUser(self, n = 0x10):
+		tmp = list(self.LPTrackingByUser.keys())
+		tmp.sort(key=lambda k: self.LPTrackingByUser[k])
+		for jerk in map(lambda k: (k, self.LPTrackingByUser[k]), tmp[-n:]):
 			print(jerk)
