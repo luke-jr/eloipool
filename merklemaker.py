@@ -18,6 +18,7 @@ from binascii import b2a_hex
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
+from copy import deepcopy
 from queue import Queue
 import jsonrpc
 import logging
@@ -207,6 +208,8 @@ class merkleMaker(threading.Thread):
 				self.logger.warning('Upstream server is not BIP 22 compliant')
 			MP = oMP or self.access.getmemorypool()
 		
+		oMP = deepcopy(MP)
+		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		if (prevBlock, bits) != self.currentBlock:
@@ -240,6 +243,7 @@ class merkleMaker(threading.Thread):
 		newMerkleTree = MerkleTree(txnlist)
 		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
 			newMerkleTree.POTInfo = MP.get('POTInfo')
+			newMerkleTree.oMP = oMP
 			self.logger.debug('Updating merkle tree')
 			self.currentMerkleTree = newMerkleTree
 		self.lastMerkleUpdate = now
