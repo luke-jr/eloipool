@@ -20,6 +20,9 @@ import config
 if not hasattr(config, 'ServerName'):
 	config.ServerName = 'Unnamed Eloipool'
 
+if not hasattr(config, 'ShareTarget'):
+	config.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
 
 import logging
 
@@ -274,6 +277,9 @@ def checkShare(share):
 			thr.start()
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
+	
+	if blkhashn > config.ShareTarget:
+		raise RejectedShare('high-hash')
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	if shareTime < issueT - 120:
@@ -546,6 +552,7 @@ if __name__ == "__main__":
 	server.getBlockTemplate = getBlockTemplate
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
+	server.ShareTarget = config.ShareTarget
 	
 	if hasattr(config, 'TrustedForwarders'):
 		server.TrustedForwarders = config.TrustedForwarders
