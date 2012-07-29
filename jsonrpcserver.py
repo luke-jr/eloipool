@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from binascii import b2a_hex
 import httpserver
 import json
 import logging
@@ -294,6 +295,12 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		
 		self.LPTracking = {}
 		self.LPTrackingByUser = {}
+	
+	def final_init(self):
+		ShareTargetHex = '%064x' % (self.ShareTarget,)
+		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
+		JSONRPCHandler.getmemorypool_rv_template['target'] = ShareTargetHex
+		JSONRPCHandler.getwork_rv_template['target'] = ShareTargetHexLE
 	
 	def pre_schedule(self):
 		if self.LPRequest == 1:
