@@ -176,6 +176,7 @@ def blockSubmissionThread(payload):
 	if not rv:
 		RaiseRedFlags('Upstream rejected block!')
 
+_STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
@@ -280,6 +281,8 @@ def checkShare(share):
 	
 	if blkhashn > config.ShareTarget:
 		raise RejectedShare('high-hash')
+	share['target'] = config.ShareTarget
+	share['_targethex'] = _STA
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	if shareTime < issueT - 120:
