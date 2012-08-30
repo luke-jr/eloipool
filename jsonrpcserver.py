@@ -286,6 +286,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		super().__init__(*a, **ka)
 		
 		self.SecretUser = None
+		self.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 		
 		self._LPId = 0
 		self.LPId = '%d' % (time(),)
