@@ -120,6 +120,10 @@ class SocketHandler:
 	@classmethod
 	def _register(cls, scls):
 		for a in dir(scls):
+			if a == 'final_init':
+				f = lambda self, x=getattr(cls, a), y=getattr(scls, a): (x(self), y(self))
+				setattr(cls, a, f)
+				continue
 			if a[0] == '_':
 				continue
 			setattr(cls, a, getattr(scls, a))

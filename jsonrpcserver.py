@@ -42,6 +42,9 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	
 	logger = logging.getLogger('JSONRPCHandler')
 	
+	def final_init(server):
+		pass
+	
 	def sendReply(self, status=200, body=b'', headers=None):
 		headers = dict(headers) if headers else {}
 		if body and body[0] == 123:  # b'{'
@@ -297,10 +300,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		self.LPTrackingByUser = {}
 	
 	def final_init(self):
-		ShareTargetHex = '%064x' % (self.ShareTarget,)
-		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
-		JSONRPCHandler.getmemorypool_rv_template['target'] = ShareTargetHex
-		JSONRPCHandler.getwork_rv_template['target'] = ShareTargetHexLE
+		JSONRPCHandler.final_init(self)
 	
 	def pre_schedule(self):
 		if self.LPRequest == 1:
