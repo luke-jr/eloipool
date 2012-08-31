@@ -245,7 +245,7 @@ class merkleMaker(threading.Thread):
 		else:
 			height = self.access.getinfo()['blocks'] + 1
 		bits = bytes.fromhex(MP['bits'])[::-1]
-		if (prevBlock, bits) != self.currentBlock:
+		if (prevBlock, height, bits) != self.currentBlock:
 			self.updateBlock(prevBlock, height, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		
 		txnlist = MP['transactions']
