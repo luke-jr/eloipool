@@ -144,7 +144,7 @@ def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
-	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return (hdr, workLog[username][merkleRoot])
 
@@ -200,7 +200,10 @@ def checkShare(share):
 	
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
-	if data[:4] != b'\1\0\0\0':
+	
+	# Note that we should accept miners reducing version to 1 if they don't understand 2 yet
+	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
+	if data[1:4] != b'\0\0\0' or data[0] > 2:
 		raise RejectedShare('bad-version')
 	
 	shareMerkleRoot = data[36:68]
