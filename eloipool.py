@@ -259,7 +259,7 @@ def checkShare(share):
 			payload = assembleBlock(data, txlist)
 		else:
 			payload = share['data'] + share['blkdata']
-		logfunc('Real block payload: %s' % (payload,))
+		logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
 		bcnode.submitBlock(payload)
