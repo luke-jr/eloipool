@@ -102,7 +102,6 @@ class merkleMaker(threading.Thread):
 				))
 		
 		# Old block is invalid
-		self.merkleRoots.clear()
 		self.currentMerkleTree = self.clearMerkleTree
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
@@ -115,6 +114,7 @@ class merkleMaker(threading.Thread):
 				# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
 				self.currentBlock = (None, height - 1, None)
 				self.clearMerkleRoots = Queue(0)
+				self.merkleRoots.clear()
 				return
 			else:
 				bits = self.currentBlock[2]
@@ -122,6 +122,7 @@ class merkleMaker(threading.Thread):
 		if _HBH is None:
 			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
 		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
+		self.currentBlock = (newBlock, height, bits)
 		
 		if self.currentBlock[1] != height:
 			if self.currentBlock[1] == height - 1:
@@ -134,8 +135,8 @@ class merkleMaker(threading.Thread):
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
 			self.logger.debug('Already using clear merkleroots for this height')
+		self.merkleRoots.clear()
 		
-		self.currentBlock = (newBlock, height, bits)
 		self.needMerkle = 2
 		self.onBlockChange()
 	
