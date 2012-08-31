@@ -101,34 +101,40 @@ class merkleMaker(threading.Thread):
 					b2a_hex(bits[::-1]).decode('utf8'),
 				))
 		
+		# Old block is invalid
+		self.merkleRoots.clear()
+		self.currentMerkleTree = self.clearMerkleTree
+		if self.currentBlock[0] != newBlock:
+			self.lastBlock = self.currentBlock
+		
 		if height is None:
 			height = self.currentBlock[1] + 1
 		if bits is None:
 			if height % self.DifficultyChangeMod == 1 or self.currentBlock[2] is None:
 				self.logger.warning('New block: %s (height %d; bits: UNKNOWN)' % (b2a_hex(newBlock[::-1]).decode('utf8'), height))
+				# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
+				self.currentBlock = (None, height - 1, None)
+				self.clearMerkleRoots = Queue(0)
+				return
 			else:
 				bits = self.currentBlock[2]
-			
-			# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
-			height -= 1
-			self.clearMerkleRoots = Queue(0)
+		
+		if _HBH is None:
+			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
+		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
+		
+		if self.currentBlock[1] != height:
+			if self.currentBlock[1] == height - 1:
+				self.clearMerkleRoots = self.nextMerkleRoots
+				self.logger.debug('Adopting next-height clear merkleroots :)')
+			else:
+				if self.currentBlock[1]:
+					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
+				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
-			if _HBH is None:
-				_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
-			self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
-			
-			if self.currentBlock[1] != height:
-				if self.currentBlock[1] == height - 1:
-					self.clearMerkleRoots = self.nextMerkleRoots
-				else:
-					if self.currentBlock[1]:
-						self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
-					self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
-				self.nextMerkleRoots = Queue(self._MaxClearSize)
-		self.merkleRoots.clear()
-		self.currentMerkleTree = self.clearMerkleTree
-		if self.currentBlock[0] != newBlock:
-			self.lastBlock = self.currentBlock
+			self.logger.debug('Already using clear merkleroots for this height')
+		
 		self.currentBlock = (newBlock, height, bits)
 		self.needMerkle = 2
 		self.onBlockChange()
