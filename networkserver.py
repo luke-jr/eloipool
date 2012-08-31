@@ -54,9 +54,21 @@ class SocketHandler:
 			data = bytes(str, self.encoding)
 		self.ac_in_buffer = self.ac_in_buffer + data
 		
+		self.server.lastReadbuf = self.ac_in_buffer
+		
 		self.handle_readbuf()
 	
 	def push(self, data):
+		if not len(self.wbuf):
+			# Try to send as much as we can immediately
+			try:
+				bs = self.socket.send(data)
+			except:
+				# Chances are we'll fail later, but anyway...
+				bs = 0
+			data = data[bs:]
+			if not len(data):
+				return
 		self.wbuf += data
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
@@ -104,6 +116,17 @@ class SocketHandler:
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
 		self.changeTask(self.handle_timeout, time() + 15)
+	
+	@classmethod
+	def _register(cls, scls):
+		for a in dir(scls):
+			if a == 'final_init':
+				f = lambda self, x=getattr(cls, a), y=getattr(scls, a): (x(self), y(self))
+				setattr(cls, a, f)
+				continue
+			if a[0] == '_':
+				continue
+			setattr(cls, a, getattr(scls, a))
 
 class NetworkListener:
 	logger = logging.getLogger('SocketListener')
@@ -156,6 +179,7 @@ class NetworkListener:
 	def handle_read(self):
 		server = self.server
 		conn, addr = self.socket.accept()
+		conn.setblocking(False)
 		h = server.RequestHandlerClass(server, conn, addr)
 	
 	def handle_error(self):
@@ -180,6 +204,9 @@ class AsyncSocketServer:
 	waker = False
 	
 	def __init__(self, RequestHandlerClass):
+		if not hasattr(self, 'ServerName'):
+			self.ServerName = 'Eloipool'
+		
 		self.RequestHandlerClass = RequestHandlerClass
 		
 		self.running = False
@@ -190,6 +217,8 @@ class AsyncSocketServer:
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
+		
+		self.TrustedForwarders = ()
 		
 		if self.waker:
 			(r, w) = os.pipe()
@@ -234,10 +263,16 @@ class AsyncSocketServer:
 			raise NotImplementedError('Class `%s\' did not enable waker' % (self.__class__.__name__))
 		os.write(self.waker, b'\1')  # to break out of the epoll
 	
+	def final_init(self):
+		pass
+	
 	def serve_forever(self):
 		self.running = True
+		self.final_init()
 		while self.keepgoing:
+			self.doing = 'pre-schedule'
 			self.pre_schedule()
+			self.doing = 'schedule'
 			if len(self._sch):
 				timeNow = time()
 				while True:
@@ -264,14 +299,17 @@ class AsyncSocketServer:
 			else:
 				timeout = -1
 			
+			self.doing = 'poll'
 			try:
 				events = self._epoll.poll(timeout=timeout)
 			except (IOError, select.error):
 				continue
 			except:
 				self.logger.error(traceback.format_exc())
+			self.doing = 'events'
 			for (fd, e) in events:
 				o = self._fd[fd]
+				self.lastHandler = o
 				try:
 					if e & EPOLL_READ:
 						o.handle_read()
@@ -282,4 +320,5 @@ class AsyncSocketServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_error)
+		self.doing = None
 		self.running = False

@@ -17,12 +17,22 @@
 
 import config
 
+if not hasattr(config, 'ServerName'):
+	config.ServerName = 'Unnamed Eloipool'
+
+if not hasattr(config, 'ShareTarget'):
+	config.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
-for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
-	logging.getLogger(infoOnly).setLevel(logging.INFO)
+if len(logging.root.handlers) == 0:
+	logging.basicConfig(
+		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
+		level=logging.DEBUG,
+	)
+	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
+		logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
 	logging.getLogger('redflag').critical(reason)
@@ -45,7 +55,7 @@ import subprocess
 from time import time
 
 def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
-	t = Txn.new()
+	txn = Txn.new()
 	
 	if useCoinbaser and hasattr(config, 'CoinbaserCmd') and config.CoinbaserCmd:
 		coinbased = 0
@@ -58,25 +68,25 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 				amount = int(p.stdout.readline())
 				addr = p.stdout.readline().rstrip(b'\n').decode('utf8')
 				pkScript = BitcoinScript.toAddress(addr)
-				t.addOutput(amount, pkScript)
+				txn.addOutput(amount, pkScript)
 				coinbased += amount
 		except:
 			coinbased = coinbaseValue + 1
 		if coinbased >= coinbaseValue:
 			logging.getLogger('makeCoinbaseTxn').error('Coinbaser failed!')
-			t.outputs = []
+			txn.outputs = []
 		else:
 			coinbaseValue -= coinbased
 	
 	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
-	t.addOutput(coinbaseValue, pkScript)
+	txn.addOutput(coinbaseValue, pkScript)
 	
 	# TODO
 	# TODO: red flag on dupe coinbase
-	return t
+	return txn
 
 
-import jsonrpcserver
+import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
@@ -85,13 +95,12 @@ DupeShareHACK = {}
 
 server = None
 def updateBlocks():
-	if server:
-		server.wakeLongpoll()
+	server.wakeLongpoll()
 
 def blockChanged():
 	global DupeShareHACK
 	DupeShareHACK = {}
-	jsonrpcserver._CheckForDupesHACK = {}
+	jsonrpc_getwork._CheckForDupesHACK = {}
 	global MM, networkTarget, server
 	bits = MM.currentBlock[2]
 	if bits is None:
@@ -110,16 +119,15 @@ MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
-MM.start()
 
 
 from binascii import b2a_hex
 from copy import deepcopy
 from struct import pack, unpack
-from time import time
-from util import RejectedShare, dblsha, hash2int
-import jsonrpc
 import threading
+from time import time
+from util import RejectedShare, dblsha, hash2int, swap32
+import jsonrpc
 import traceback
 
 gotwork = None
@@ -132,43 +140,29 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-db = None
-if hasattr(config, 'DbOptions'):
-	import psycopg2
-	db = psycopg2.connect(**config.DbOptions)
-
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
 	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	return hdr
+	return (hdr, workLog[username][merkleRoot])
 
-def YN(b):
-	if b is None:
-		return None
-	return 'Y' if b else 'N'
+def getBlockTemplate(username):
+	MC = MM.getMC()
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
+	wliLen = coinbase[0]
+	wli = coinbase[1:wliLen+1]
+	workLog.setdefault(username, {})[wli] = (MC, time())
+	return MC
 
-def logShare(share):
-	if db is None:
-		return
-	dbc = db.cursor()
-	rem_host = share.get('remoteHost', '?')
-	username = share['username']
-	reason = share.get('rejectReason', None)
-	upstreamResult = share.get('upstreamResult', None)
-	solution = share['_origdata']
-	#solution = b2a_hex(solution).decode('utf8')
-	stmt = "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values (%s, %s, %s, %s, %s, decode(%s, 'hex'))"
-	params = (rem_host, username, YN(not reason), YN(upstreamResult), reason, solution)
-	dbc.execute(stmt, params)
-	db.commit()
+loggersShare = []
 
 RBDs = []
 RBPs = []
 
-from bitcoin.varlen import varlenEncode
+from bitcoin.varlen import varlenEncode, varlenDecode
+import bitcoin.txn
 def assembleBlock(blkhdr, txlist):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
@@ -179,12 +173,17 @@ def assembleBlock(blkhdr, txlist):
 def blockSubmissionThread(payload):
 	while True:
 		try:
-			UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
+			rv = UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
 			break
 		except:
 			pass
+	if not rv:
+		RaiseRedFlags('Upstream rejected block!')
 
+_STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
+	shareTime = share['time'] = time()
+	
 	data = share['data']
 	data = data[:80]
 	(prevBlock, height, bits) = MM.currentBlock
@@ -194,7 +193,6 @@ def checkShare(share):
 			raise RejectedShare('stale-prevblk')
 		raise RejectedShare('bad-prevblk')
 	
-	shareMerkleRoot = data[36:68]
 	# TODO: use userid
 	username = share['username']
 	if username not in workLog:
@@ -205,17 +203,31 @@ def checkShare(share):
 	if data[:4] != b'\1\0\0\0':
 		raise RejectedShare('bad-version')
 	
+	shareMerkleRoot = data[36:68]
+	if 'blkdata' in share:
+		pl = share['blkdata']
+		(txncount, pl) = varlenDecode(pl)
+		cbtxn = bitcoin.txn.Txn(pl)
+		cbtxn.disassemble(retExtra=True)
+		coinbase = cbtxn.getCoinbase()
+		wliLen = coinbase[0]
+		wli = coinbase[1:wliLen+1]
+		mode = 'MC'
+		moden = 1
+	else:
+		wli = shareMerkleRoot
+		mode = 'MRD'
+		moden = 0
+	
 	MWL = workLog[username]
-	if shareMerkleRoot not in MWL:
+	if wli not in MWL:
 		raise RejectedShare('unknown-work')
-	(MRD, issueT) = MWL[shareMerkleRoot]
-	share['MRD'] = MRD
+	(wld, issueT) = MWL[wli]
+	share[mode] = wld
 	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
 	DupeShareHACK[data] = None
-	
-	shareTime = share['time'] = time()
 	
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':
@@ -227,15 +239,23 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
-	txlist = MRD[1].data
-	t = txlist[0]
-	t.setCoinbase(MRD[2])
-	t.assemble()
+	workMerkleTree = wld[1]
+	workCoinbase = wld[2]
+	
+	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
+	txlist = workMerkleTree.data
+	txlist = [deepcopy(txlist[0]),] + txlist[1:]
+	cbtxn = txlist[0]
+	cbtxn.setCoinbase(workCoinbase)
+	cbtxn.assemble()
 	
 	if blkhashn <= networkTarget:
 		logfunc("Submitting upstream")
-		RBDs.append( deepcopy( (data, txlist) ) )
-		payload = assembleBlock(data, txlist)
+		RBDs.append( deepcopy( (data, txlist, share.get('blkdata', None), workMerkleTree) ) )
+		if not moden:
+			payload = assembleBlock(data, txlist)
+		else:
+			payload = share['data'] + share['blkdata']
 		logfunc('Real block payload: %s' % (payload,))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
@@ -246,9 +266,9 @@ def checkShare(share):
 	# Gotwork hack...
 	if gotwork and blkhashn <= config.GotWorkTarget:
 		try:
-			coinbaseMrkl = t.data
+			coinbaseMrkl = cbtxn.data
 			coinbaseMrkl += blkhash
-			steps = MRD[1]._steps
+			steps = workMerkleTree._steps
 			coinbaseMrkl += pack('B', len(steps))
 			for step in steps:
 				coinbaseMrkl += step
@@ -263,6 +283,11 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
+	if blkhashn > config.ShareTarget:
+		raise RejectedShare('high-hash')
+	share['target'] = config.ShareTarget
+	share['_targethex'] = _STA
+	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	if shareTime < issueT - 120:
 		raise RejectedShare('stale-work')
@@ -271,7 +296,28 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	logShare(share)
+	if moden:
+		cbpre = cbtxn.getCoinbase()
+		cbpreLen = len(cbpre)
+		if coinbase[:cbpreLen] != cbpre:
+			raise RejectedShare('bad-cb-prefix')
+		
+		# Filter out known "I support" flags, to prevent exploits
+		for ff in (b'/P2SH/', b'NOP2SH', b'p2sh/CHV', b'p2sh/NOCHV'):
+			if coinbase.find(ff) > max(-1, cbpreLen - len(ff)):
+				raise RejectedShare('bad-cb-flag')
+		
+		if len(coinbase) > 100:
+			raise RejectedShare('bad-cb-length')
+		
+		cbtxn.setCoinbase(coinbase)
+		cbtxn.assemble()
+		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
+			raise RejectedShare('bad-txnmrklroot')
+		
+		allowed = assembleBlock(data, txlist)
+		if allowed != share['data'] + share['blkdata']:
+			raise RejectedShare('bad-txns')
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
@@ -280,18 +326,29 @@ def receiveShare(share):
 		checkShare(share)
 	except RejectedShare as rej:
 		share['rejectReason'] = str(rej)
-		logShare(share)
 		raise
-	# TODO
+	finally:
+		if '_origdata' in share:
+			share['solution'] = share['_origdata']
+		else:
+			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
+		for i in loggersShare:
+			i(share)
 
-def newBlockNotification(signum, frame):
+def newBlockNotification():
 	logging.getLogger('newBlockNotification').info('Received new block notification')
 	MM.updateMerkleTree()
 	# TODO: Force RESPOND TO LONGPOLLS?
 	pass
 
+def newBlockNotificationSIGNAL(signum, frame):
+	# Use a new thread, in case the signal handler is called with locks held
+	thr = threading.Thread(target=newBlockNotification, name='newBlockNotification via signal %s' % (signum,))
+	thr.daemon = True
+	thr.start()
+
 from signal import signal, SIGUSR1
-signal(SIGUSR1, newBlockNotification)
+signal(SIGUSR1, newBlockNotificationSIGNAL)
 
 
 import os
@@ -307,13 +364,21 @@ SAVE_STATE_FILENAME = 'eloipool.worklog'
 def stopServers():
 	logger = logging.getLogger('stopServers')
 	
+	if hasattr(stopServers, 'already'):
+		logger.debug('Already tried to stop servers before')
+		return
+	stopServers.already = True
+	
 	logger.info('Stopping servers...')
 	global bcnode, server
 	servers = (bcnode, server)
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
-		s.wakeup()
+		try:
+			s.wakeup()
+		except:
+			logger.error('Failed to stop server %s\n%s' % (s, traceback.format_exc()))
 	i = 0
 	while True:
 		sl = []
@@ -385,17 +450,25 @@ def restoreState():
 		with open(SAVE_STATE_FILENAME, 'rb') as f:
 			t = pickle.load(f)
 			if type(t) == tuple:
+				if len(t) > 2:
+					# Future formats, not supported here
+					ver = t[3]
+					# TODO
+				
+				# Old format, from 2012-02-02 to 2012-02-03
 				workLog = t[0]
 				DupeShareHACK = t[1]
 				t = None
 			else:
 				if isinstance(t, dict):
+					# Old format, from 2012-02-03 to 2012-02-03
 					DupeShareHACK = t
 					t = None
 				else:
+					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
 				
-				if s.st_mtime + 120 >= time():
+				if t + 120 >= time():
 					workLog = pickle.load(f)
 				else:
 					logger.debug('Skipping restore of expired workLog')
@@ -411,8 +484,52 @@ from jsonrpcserver import JSONRPCListener, JSONRPCServer
 import interactivemode
 from networkserver import NetworkListener
 import threading
+import sharelogging
+import imp
 
 if __name__ == "__main__":
+	if not hasattr(config, 'ShareLogging'):
+		config.ShareLogging = ()
+	if hasattr(config, 'DbOptions'):
+		logging.getLogger('backwardCompatibility').warn('DbOptions configuration variable is deprecated; upgrade to ShareLogging var before 2013-03-05')
+		config.ShareLogging = list(config.ShareLogging)
+		config.ShareLogging.append( {
+			'type': 'sql',
+			'engine': 'postgres',
+			'dbopts': config.DbOptions,
+			'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
+		} )
+	for i in config.ShareLogging:
+		if not hasattr(i, 'keys'):
+			name, parameters = i
+			logging.getLogger('backwardCompatibility').warn('Using short-term backward compatibility for ShareLogging[\'%s\']; be sure to update config before 2012-04-04' % (name,))
+			if name == 'postgres':
+				name = 'sql'
+				i = {
+					'engine': 'postgres',
+					'dbopts': parameters,
+				}
+			elif name == 'logfile':
+				i = {}
+				i['thropts'] = parameters
+				if 'filename' in parameters:
+					i['filename'] = parameters['filename']
+					i['thropts'] = dict(i['thropts'])
+					del i['thropts']['filename']
+			else:
+				i = parameters
+			i['type'] = name
+		
+		name = i['type']
+		parameters = i
+		try:
+			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
+			m = imp.load_module(name, fp, pathname, description)
+			lo = getattr(m, name)(**parameters)
+			loggersShare.append(lo.logShare)
+		except:
+			logging.getLogger('sharelogging').error("Error setting up share logger %s: %s", name,  sys.exc_info())
+
 	LSbc = []
 	if not hasattr(config, 'BitcoinNodeAddresses'):
 		config.BitcoinNodeAddresses = ()
@@ -422,8 +539,13 @@ if __name__ == "__main__":
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
+	import jsonrpc_getmemorypool
+	import jsonrpc_getwork
+	import jsonrpc_setworkaux
+	
 	server = JSONRPCServer()
 	if hasattr(config, 'JSONRPCAddress'):
+		logging.getLogger('backwardCompatibility').warn('JSONRPCAddress configuration variable is deprecated; upgrade to JSONRPCAddresses list before 2013-03-05')
 		if not hasattr(config, 'JSONRPCAddresses'):
 			config.JSONRPCAddresses = []
 		config.JSONRPCAddresses.insert(0, config.JSONRPCAddress)
@@ -434,8 +556,16 @@ if __name__ == "__main__":
 		server.SecretUser = config.SecretUser
 	server.aux = MM.CoinbaseAux
 	server.getBlockHeader = getBlockHeader
+	server.getBlockTemplate = getBlockTemplate
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
+	server.ShareTarget = config.ShareTarget
+	
+	if hasattr(config, 'TrustedForwarders'):
+		server.TrustedForwarders = config.TrustedForwarders
+	server.ServerName = config.ServerName
+	
+	MM.start()
 	
 	restoreState()
 	

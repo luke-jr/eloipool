@@ -1,4 +1,12 @@
+### Settings relating to server identity
+
+# Name of the server
+ServerName = 'Private Eloipool'
+
 ### Settings relating to server scaling/load
+
+# Share hashes must be below this to be valid shares
+ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 # Minimum and maximum of merkle roots to keep queued
 WorkQueueSizeRegular = (0x100, 0x1000)
@@ -26,7 +34,8 @@ IdleSleepTime = 0.1
 TrackerAddr = 'mrsP7M31efGkQHXb7nRiWLDjfV2M8oakf2'  # testnet
 
 # Coinbaser command to control reward delegation
-CoinbaserCmd = 'let x=%d-1; echo -e "1\\n$x\\n1GEJfZRPrK2BLSSx3r6gwtuFxCUvq3QytN\\n"'
+# NOTE: This example donates 1% of block rewards to Luke-Jr for Eloipool development
+CoinbaserCmd = 'echo -e "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU"'
 
 ### Settings relating to upstream data providers
 
@@ -46,7 +55,7 @@ UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 #GotWorkURI = ''
 
 # Share hashes must be below this to be submitted to gotwork
-GotWorkTarget = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+GotWorkTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 ### Settings relating to network services
 
@@ -63,3 +72,47 @@ JSONRPCAddresses = (
 BitcoinNodeAddresses = (
 	('', 8338),
 )
+
+# Addresses that are allowed to "spoof" from address with the X-Forwarded-For header
+TrustedForwarders = ('::ffff:127.0.0.1',)
+
+
+# Logging of shares:
+ShareLogging = (
+	{
+		'type': 'logfile',
+		'filename': 'share-logfile',
+		'format': "{time} {Q(remoteHost)} {username} {YN(not(rejectReason))} {dash(YN(upstreamResult))} {dash(rejectReason)} {solution}\n",
+	},
+	{
+		'type': 'sql',
+		'engine': 'postgres',
+		'dbopts': {
+			'host': 'localhost',
+			'database': 'pooldb',
+			'user': 'eloipool',
+			'password': 'somethingsecret',
+		},
+		'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))",
+	},
+	{
+		'type': 'sql',
+		'engine': 'mysql',
+		'dbopts': {
+			'host': 'localhost',
+			'db': 'pooldb',
+			'user': 'eloipool',
+			'password': 'somethingsecret',
+		},
+		'statement': "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, unhex({solution}))",
+	},
+	{
+		'type': 'sql',
+		'engine': 'sqlite',
+		'dbopts': {
+			'database': 'share.db',
+		},
+		'statement': "insert into shares (remoteHost, username, rejectReason, upstreamResult, solution) values ({remoteHost}, {username}, {rejectReason}, {upstreamResult}, {solution})",
+	},
+)
+

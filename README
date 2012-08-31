@@ -23,4 +23,9 @@ Dependencies
 Python 3			http://python.org
 python-bitcoinrpc	https://github.com/jgarzik/python-bitcoinrpc
 python-base58		https://gitorious.org/bitcoin/python-base58
-midstate (OPTIONAL)	http://gitorious.org/midstate/midstate
+
+Optional Dependencies
+---------------------
+midstate			http://gitorious.org/midstate/midstate
+Psycopg2			http://initd.org/psycopg/
+PyMySQL				http://www.pymysql.org/
