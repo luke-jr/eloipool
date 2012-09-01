@@ -210,8 +210,9 @@ def checkShare(share):
 		cbtxn = bitcoin.txn.Txn(pl)
 		cbtxn.disassemble(retExtra=True)
 		coinbase = cbtxn.getCoinbase()
-		wliLen = coinbase[0]
-		wli = coinbase[1:wliLen+1]
+		wliPos = coinbase[0] + 2
+		wliLen = coinbase[wliPos - 1]
+		wli = coinbase[wliPos:wliPos+wliLen]
 		mode = 'MC'
 		moden = 1
 	else:
