@@ -170,15 +170,35 @@ def assembleBlock(blkhdr, txlist):
 		payload += tx.data
 	return payload
 
-def blockSubmissionThread(payload):
+def blockSubmissionThread(payload, blkhash):
+	myblock = (blkhash, payload[4:36])
+	payload = b2a_hex(payload).decode('ascii')
+	nexterr = 0
 	while True:
 		try:
-			rv = UpstreamBitcoindJSONRPC.getmemorypool(b2a_hex(payload).decode('ascii'))
+			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
 		except:
-			pass
-	if not rv:
-		RaiseRedFlags('Upstream rejected block!')
+			try:
+				rv = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+				if rv is True:
+					rv = None
+				elif rv is False:
+					rv = 'rejected'
+				break
+			except:
+				pass
+			now = time()
+			if now > nexterr:
+				# FIXME: This will show "Method not found" on pre-BIP22 servers
+				RaiseRedFlags(traceback.format_exc())
+				nexterr = now + 5
+			if MM.currentBlock[0] not in myblock:
+				RaiseRedFlags('Giving up on submitting block upstream')
+				return
+	if rv:
+		# FIXME: The returned value could be a list of multiple responses
+		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
 _STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
@@ -262,7 +282,7 @@ def checkShare(share):
 			payload = share['data'] + share['blkdata']
 		logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 		RBPs.append(payload)
-		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
+		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash)).start()
 		bcnode.submitBlock(payload)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
@@ -543,7 +563,7 @@ if __name__ == "__main__":
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
-	import jsonrpc_getmemorypool
+	import jsonrpc_getblocktemplate
 	import jsonrpc_getwork
 	import jsonrpc_setworkaux
 	

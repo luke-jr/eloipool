@@ -34,16 +34,20 @@ _makeCoinbase = [0, 0]
 
 class merkleMaker(threading.Thread):
 	OldGMP = None
+	GBTCaps = [
+		'coinbasevalue',
+		'coinbase/append',
+		'coinbase',
+		'generation',
+		'time',
+		'transactions/remove',
+		'prevblock',
+	]
+	GBTReq = {
+		'capabilities': GBTCaps,
+	}
 	GMPReq = {
-		'capabilities': [
-			'coinbasevalue',
-			'coinbase/append',
-			'coinbase',
-			'generation',
-			'time',
-			'transactions/remove',
-			'prevblock',
-		],
+		'capabilities': GBTCaps,
 		'tx': 'obj',
 	}
 	
@@ -229,24 +233,27 @@ class merkleMaker(threading.Thread):
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		
 		try:
-			MP = self.access.getmemorypool(self.GMPReq)
+			# First, try BIP 22 standard getblocktemplate :)
+			MP = self.access.getblocktemplate(self.GBTReq)
 			self.OldGMP = False
-			oMP = None
 		except:
-			MP = False
 			try:
-				oMP = self.access.getmemorypool()
+				# Failing that, give BIP 22 draft (2012-02 through 2012-07) getmemorypool a chance
+				MP = self.access.getmemorypool(self.GMPReq)
 			except:
-				oMP = False
-			if oMP is False:
+				try:
+					# Finally, fall back to bitcoind 0.5/0.6 getmemorypool
+					MP = self.access.getmemorypool()
+				except:
+					MP = False
+			if MP is False:
 				# This way, we get the error from the BIP22 call if the old one fails too
 				raise
-		if MP is False:
+			
 			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
 			if not self.OldGMP:
 				self.OldGMP = True
-				self.logger.warning('Upstream server is not BIP 22 compliant')
-			MP = oMP or self.access.getmemorypool()
+				self.logger.warning('Upstream server is not BIP 22 compatible')
 		
 		oMP = deepcopy(MP)
 		
@@ -456,7 +463,7 @@ class merkleMaker(threading.Thread):
 		(prevBlock, height, bits) = self.currentBlock
 		mt = self.currentMerkleTree
 		cb = self.makeCoinbase(height=height)
-		return (None, mt, cb, prevBlock, bits)
+		return (height, mt, cb, prevBlock, bits)
 
 # merkleMaker tests
 def _test():
