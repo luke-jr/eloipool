@@ -345,7 +345,7 @@ class merkleMaker(threading.Thread):
 			wmsgf = a()
 		winfo = self.lastWarning.setdefault(wid, [0, None])
 		(lastTime, lastDoing) = winfo
-		if now <= lastTime + max(5, self.MinimumTxnUpdateWait) and doin == lastDoing:
+		if now <= lastTime + max(5, self.MinimumTxnUpdateWait):
 			return
 		winfo[0] = now
 		nowDoing = doin
