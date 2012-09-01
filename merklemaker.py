@@ -153,6 +153,7 @@ class merkleMaker(threading.Thread):
 		
 		return True
 	
+	# Aggressive "Power Of Two": Remove transactions even with fees to reach our goal
 	def _APOT(self, txninfopot, MP, POTInfo):
 		feeTxnsTrimmed = 0
 		feesTrimmed = 0
@@ -185,6 +186,8 @@ class merkleMaker(threading.Thread):
 			self._trimBlock(MP, txnlist, txninfo, 'SigOpLimit', lambda x: 'Making blocks over 20k SigOp limit (%d; %s)' % (blocksigops, x))
 			blocksigops -= txnsigops
 		
+		# Aim to produce blocks with "Power Of Two" transaction counts
+		# This helps avoid any chance of someone abusing CVE-2012-2459 with them
 		POTMode = getattr(self, 'POT', 1)
 		txncount = len(txnlist) + 1
 		if POTMode:
