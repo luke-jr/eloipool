@@ -60,7 +60,7 @@ class _getmemorypool:
 			self.processLP(params['longpollid'])
 		
 		rv = dict(self.getmemorypool_rv_template)
-		MC = self.server.getBlockTemplate(self.Username)
+		(MC, target) = self.server.getBlockTemplate(self.Username)
 		(dummy, merkleTree, cb, prevBlock, bits) = MC
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
 		rv['longpollid'] = str(self.server.LPId)
@@ -74,6 +74,7 @@ class _getmemorypool:
 		rv['mintime'] = now - 180
 		rv['maxtime'] = now + 120
 		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
+		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])
 		t.setCoinbase(cb)
 		t.assemble()

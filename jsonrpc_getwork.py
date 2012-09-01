@@ -45,9 +45,10 @@ class _getwork:
 		rv = dict(self.getwork_rv_template)
 		hdr = self.server.getBlockHeader(self.Username)
 		if isinstance(hdr, tuple):
-			(hdr, x) = hdr
+			(hdr, x, target) = hdr
 		else:
 			x = None
+			target = server.ShareTarget
 		
 		# FIXME: this assumption breaks with internal rollntime
 		# NOTE: noncerange needs to set nonce to start value at least
@@ -64,6 +65,11 @@ class _getwork:
 		if midstate and 'midstate' not in self.extensions and 'midstate' not in self.quirks:
 			h = midstate.SHA256(hdr)[:8]
 			rv['midstate'] = b2a_hex(pack('<LLLLLLLL', *h)).decode('ascii')
+		
+		ShareTargetHex = '%064x' % (target,)
+		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
+		rv['target'] = ShareTargetHexLE
+		
 		return rv
 	
 	def doJSON_submitwork(self, datax):

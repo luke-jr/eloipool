@@ -90,6 +90,7 @@ import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
+userStatus = {}
 networkTarget = None
 DupeShareHACK = {}
 
@@ -134,11 +135,54 @@ gotwork = None
 if hasattr(config, 'GotWorkURI'):
 	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
 
+if not hasattr(config, 'DynamicTargetting'):
+	config.DynamicTargetting = 0
+else:
+	config.DynamicTargetGoal *= 2
+
 def submitGotwork(info):
 	try:
 		gotwork.gotwork(info)
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
+
+def getTarget(username, now):
+	if not config.DynamicTargetting:
+		return None
+	if username in userStatus:
+		status = userStatus[username]
+	else:
+		userStatus[username] = [None, now, 0]
+		return None
+	(targetIn, lastUpdate, work) = status
+	if work <= config.DynamicTargetGoal:
+		if now < lastUpdate + 120:
+			return targetIn
+		if not work:
+			if targetIn:
+				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
+				userStatus[username] = [None, now, 0]
+			return None
+	
+	deltaSec = now - lastUpdate
+	targetIn = targetIn or config.ShareTarget
+	target = targetIn
+	target = int(target * config.DynamicTargetGoal * deltaSec / 120 / work)
+	if target > config.ShareTarget:
+		target = None
+	if target != targetIn:
+		pfx = 'Retargetting %s' % (repr(username),)
+		getTarget.logger.debug("%s from: %064x" % (pfx, targetIn,))
+		getTarget.logger.debug("%s   to: %064x" % (pfx, target,))
+	userStatus[username] = [target, now, 0]
+	return target
+getTarget.logger = logging.getLogger('getTarget')
+
+def setWLI(username, wli, wld):
+	now = time()
+	target = getTarget(username, now)
+	workLog.setdefault(username, {})[wli] = (wld, now, target)
+	return target or config.ShareTarget
 
 def getBlockHeader(username):
 	MRD = MM.getMRD()
@@ -146,7 +190,8 @@ def getBlockHeader(username):
 	timestamp = pack('<L', int(time()))
 	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	return (hdr, workLog[username][merkleRoot])
+	target = setWLI(username, merkleRoot, MRD)
+	return (hdr, workLog[username][merkleRoot], target)
 
 def getBlockTemplate(username):
 	MC = MM.getMC()
@@ -154,8 +199,8 @@ def getBlockTemplate(username):
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	workLog.setdefault(username, {})[wli] = (MC, time())
-	return MC
+	target = setWLI(username, wli, MC)
+	return (MC, target)
 
 loggersShare = []
 
@@ -201,7 +246,6 @@ def blockSubmissionThread(payload, blkhash):
 		# FIXME: The returned value could be a list of multiple responses
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
-_STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
@@ -247,7 +291,7 @@ def checkShare(share):
 	MWL = workLog[username]
 	if wli not in MWL:
 		raise RejectedShare('unknown-work')
-	(wld, issueT) = MWL[wli]
+	(wld, issueT, workTarget) = MWL[wli]
 	share[mode] = wld
 	
 	if data in DupeShareHACK:
@@ -308,10 +352,12 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
-	if blkhashn > config.ShareTarget:
+	if workTarget is None:
+		workTarget = config.ShareTarget
+	if blkhashn > workTarget:
 		raise RejectedShare('high-hash')
-	share['target'] = config.ShareTarget
-	share['_targethex'] = _STA
+	share['target'] = workTarget
+	share['_targethex'] = '%064x' % (workTarget,)
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	if shareTime < issueT - 120:
@@ -320,6 +366,13 @@ def checkShare(share):
 		raise RejectedShare('time-too-old')
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
+	
+	status = userStatus[username]
+	target = status[0] or config.ShareTarget
+	if target == workTarget:
+		userStatus[username][2] += 1
+	else:
+		userStatus[username][2] += float(target) / workTarget
 	
 	if moden:
 		cbpre = cbtxn.getCoinbase()
