@@ -20,6 +20,9 @@ import config
 if not hasattr(config, 'ServerName'):
 	config.ServerName = 'Unnamed Eloipool'
 
+if not hasattr(config, 'ShareTarget'):
+	config.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
 
 import logging
 
@@ -106,7 +109,11 @@ def blockChanged():
 	DupeShareHACK = {}
 	jsonrpc_getwork._CheckForDupesHACK = {}
 	global MM, networkTarget, server
-	networkTarget = Bits2Target(MM.currentBlock[1])
+	bits = MM.currentBlock[2]
+	if bits is None:
+		networkTarget = None
+	else:
+		networkTarget = Bits2Target(bits)
 	workLog.clear()
 	updateBlocks()
 
@@ -153,7 +160,7 @@ def getBlockHeader(username):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = time() + merkleTree.timeOffset
 	timestamp = pack('<L', int(timestamp))
-	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return (hdr, workLog[username][merkleRoot])
 
@@ -201,12 +208,13 @@ def blockSubmissionThread(payload, share):
 		logShare(share)
 blockSubmissionThread.logger = logging.getLogger('blockSubmission')
 
+_STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
 	data = share['data']
 	data = data[:80]
-	(prevBlock, bits) = MM.currentBlock
+	(prevBlock, height, bits) = MM.currentBlock
 	sharePrevBlock = data[4:36]
 	if sharePrevBlock != prevBlock:
 		if sharePrevBlock == MM.lastBlock[0]:
@@ -220,7 +228,10 @@ def checkShare(share):
 	
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
-	if data[:4] != b'\1\0\0\0':
+	
+	# Note that we should accept miners reducing version to 1 if they don't understand 2 yet
+	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
+	if data[1:4] != b'\0\0\0' or data[0] > 2:
 		raise RejectedShare('bad-version')
 	
 	shareMerkleRoot = data[36:68]
@@ -280,7 +291,7 @@ def checkShare(share):
 		else:
 			payload = share['data'] + share['blkdata']
 		if isBlock:
-			logfunc('Real block payload: %s' % (payload,))
+			logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 			RBPs.append(payload)
 		if config.DelayLogForUpstream:
 			share['upstreamRejectReason'] = PendingUpstream
@@ -312,6 +323,11 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
+	if blkhashn > config.ShareTarget:
+		raise RejectedShare('high-hash')
+	share['target'] = config.ShareTarget
+	share['_targethex'] = _STA
+	
 	# FIXME: enforce lower expiration times? (right now, it's pretty difficult to hit ones under 120 seconds anyway)
 	if shareTime < issueT - 120:
 		raise RejectedShare('stale-work')
@@ -330,7 +346,7 @@ def checkShare(share):
 		
 		# Filter out known "I support" flags, to prevent exploits
 		for ff in (b'/P2SH/', b'NOP2SH', b'p2sh/CHV', b'p2sh/NOCHV'):
-			if coinbase.find(ff) > cbpreLen - len(ff):
+			if coinbase.find(ff) > max(-1, cbpreLen - len(ff)):
 				raise RejectedShare('bad-cb-flag')
 		
 		if len(coinbase) > 100:
@@ -394,13 +410,21 @@ SAVE_STATE_FILENAME = 'eloipool.worklog'
 def stopServers():
 	logger = logging.getLogger('stopServers')
 	
+	if hasattr(stopServers, 'already'):
+		logger.debug('Already tried to stop servers before')
+		return
+	stopServers.already = True
+	
 	logger.info('Stopping servers...')
 	global bcnode, server
 	servers = (bcnode, server)
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
-		s.wakeup()
+		try:
+			s.wakeup()
+		except:
+			logger.error('Failed to stop server %s\n%s' % (s, traceback.format_exc()))
 	i = 0
 	while True:
 		sl = []
@@ -588,8 +612,8 @@ if __name__ == "__main__":
 	server.getBlockTemplate = getBlockTemplate
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
+	server.ShareTarget = config.ShareTarget
 	
-	server.TrustedForwarders = ()
 	if hasattr(config, 'TrustedForwarders'):
 		server.TrustedForwarders = config.TrustedForwarders
 	server.ServerName = config.ServerName

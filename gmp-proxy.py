@@ -110,6 +110,7 @@ def HandleLP():
 			break
 		except socket.timeout:
 			pass
+	jsonrpc_getwork._CheckForDupesHACK = {}
 	makeMRD(mp)
 	server.wakeLongpoll()
 

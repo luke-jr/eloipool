@@ -30,6 +30,11 @@ from util import RejectedShare, swap32
 _CheckForDupesHACK = {}
 _RealDupes = {}
 class _getwork:
+	def final_init(server):
+		ShareTargetHex = '%064x' % (server.ShareTarget,)
+		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
+		JSONRPCHandler.getwork_rv_template['target'] = ShareTargetHexLE
+	
 	getwork_rv_template = {
 		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
 		'target': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000',

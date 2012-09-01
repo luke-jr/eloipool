@@ -120,6 +120,10 @@ class SocketHandler:
 	@classmethod
 	def _register(cls, scls):
 		for a in dir(scls):
+			if a == 'final_init':
+				f = lambda self, x=getattr(cls, a), y=getattr(scls, a): (x(self), y(self))
+				setattr(cls, a, f)
+				continue
 			if a[0] == '_':
 				continue
 			setattr(cls, a, getattr(scls, a))
@@ -214,6 +218,8 @@ class AsyncSocketServer:
 		self._sch = ScheduleDict()
 		self._schEH = {}
 		
+		self.TrustedForwarders = ()
+		
 		if self.waker:
 			(r, w) = os.pipe()
 			o = _Waker(self, r)
@@ -257,8 +263,12 @@ class AsyncSocketServer:
 			raise NotImplementedError('Class `%s\' did not enable waker' % (self.__class__.__name__))
 		os.write(self.waker, b'\1')  # to break out of the epoll
 	
+	def final_init(self):
+		pass
+	
 	def serve_forever(self):
 		self.running = True
+		self.final_init()
 		while self.keepgoing:
 			self.doing = 'pre-schedule'
 			self.pre_schedule()

@@ -49,3 +49,34 @@ def countSigOps(s):
 		elif 0xae == ch & 0xfe:
 			c += 20
 	return c
+
+# NOTE: This does not work for signed numbers (set the high bit) or zero (use b'\0')
+def encodeUNum(n):
+	s = bytearray(b'\1')
+	while n > 127:
+		s[0] += 1
+		s.append(n % 256)
+		n //= 256
+	s.append(n)
+	return bytes(s)
+
+def encodeNum(n):
+	if n == 0:
+		return b'\0'
+	if n > 0:
+		return encodeUNum(n)
+	s = encodeUNum(abs(n))
+	s = bytearray(s)
+	s[-1] = s[-1] | 0x80
+	return bytes(s)
+
+# tests
+def _test():
+	assert b'\0' == encodeNum(0)
+	assert b'\1\x55' == encodeNum(0x55)
+	assert b'\2\xfd\0' == encodeNum(0xfd)
+	assert b'\3\xff\xff\0' == encodeNum(0xffff)
+	assert b'\3\0\0\x01' == encodeNum(0x10000)
+	assert b'\5\xff\xff\xff\xff\0' == encodeNum(0xffffffff)
+
+_test()

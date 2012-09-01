@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from binascii import b2a_hex
 import httpserver
 import json
 import logging
@@ -40,6 +41,9 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	JSONRPCURIs = (b'/', b'/LP', b'/LP/')
 	
 	logger = logging.getLogger('JSONRPCHandler')
+	
+	def final_init(server):
+		pass
 	
 	def sendReply(self, status=200, body=b'', headers=None):
 		headers = dict(headers) if headers else {}
@@ -135,10 +139,17 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		if myip not in self.server.LPTracking:
 			self.server.LPTracking[myip] = 0
 		self.server.LPTracking[myip] += 1
+		
+		myuser = self.Username
+		if myuser not in self.server.LPTrackingByUser:
+			self.server.LPTrackingByUser[myuser] = 0
+		self.server.LPTrackingByUser[myuser] += 1
+		
 		return self.server.LPTracking[myip]
 	
 	def LPUntrack(self):
 		self.server.LPTracking[self.remoteHost] -= 1
+		self.server.LPTrackingByUser[self.Username] -= 1
 	
 	def cleanupLP(self):
 		# Called when the connection is closed
@@ -275,6 +286,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		super().__init__(*a, **ka)
 		
 		self.SecretUser = None
+		self.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 		
 		self._LPId = 0
 		self.LPId = '%d' % (time(),)
@@ -283,6 +295,10 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		self._LPWaitTime = time() + 15
 		
 		self.LPTracking = {}
+		self.LPTrackingByUser = {}
+	
+	def final_init(self):
+		JSONRPCHandler.final_init(self)
 	
 	def pre_schedule(self):
 		if self.LPRequest == 1:
@@ -337,4 +353,10 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		tmp = list(self.LPTracking.keys())
 		tmp.sort(key=lambda k: self.LPTracking[k])
 		for jerk in map(lambda k: (k, self.LPTracking[k]), tmp[-n:]):
+			print(jerk)
+	
+	def TopLPersByUser(self, n = 0x10):
+		tmp = list(self.LPTrackingByUser.keys())
+		tmp.sort(key=lambda k: self.LPTrackingByUser[k])
+		for jerk in map(lambda k: (k, self.LPTrackingByUser[k]), tmp[-n:]):
 			print(jerk)

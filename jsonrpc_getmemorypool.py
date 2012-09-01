@@ -23,6 +23,10 @@ from util import RejectedShare
 _NoParams = {}
 
 class _getmemorypool:
+	def final_init(server):
+		ShareTargetHex = '%064x' % (server.ShareTarget,)
+		JSONRPCHandler.getmemorypool_rv_template['target'] = ShareTargetHex
+	
 	getmemorypool_rv_template = {
 		'longpoll': '/LP',
 		'mutable': [
