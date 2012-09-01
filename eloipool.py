@@ -102,7 +102,11 @@ def blockChanged():
 	DupeShareHACK = {}
 	jsonrpc_getwork._CheckForDupesHACK = {}
 	global MM, networkTarget, server
-	networkTarget = Bits2Target(MM.currentBlock[1])
+	bits = MM.currentBlock[2]
+	if bits is None:
+		networkTarget = None
+	else:
+		networkTarget = Bits2Target(bits)
 	workLog.clear()
 	updateBlocks()
 
@@ -140,7 +144,7 @@ def getBlockHeader(username):
 	MRD = MM.getMRD()
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
 	timestamp = pack('<L', int(time()))
-	hdr = b'\1\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return (hdr, workLog[username][merkleRoot])
 
@@ -182,7 +186,7 @@ def checkShare(share):
 	
 	data = share['data']
 	data = data[:80]
-	(prevBlock, bits) = MM.currentBlock
+	(prevBlock, height, bits) = MM.currentBlock
 	sharePrevBlock = data[4:36]
 	if sharePrevBlock != prevBlock:
 		if sharePrevBlock == MM.lastBlock[0]:
@@ -196,7 +200,10 @@ def checkShare(share):
 	
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
-	if data[:4] != b'\1\0\0\0':
+	
+	# Note that we should accept miners reducing version to 1 if they don't understand 2 yet
+	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
+	if data[1:4] != b'\0\0\0' or data[0] > 2:
 		raise RejectedShare('bad-version')
 	
 	shareMerkleRoot = data[36:68]
@@ -252,7 +259,7 @@ def checkShare(share):
 			payload = assembleBlock(data, txlist)
 		else:
 			payload = share['data'] + share['blkdata']
-		logfunc('Real block payload: %s' % (payload,))
+		logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload,)).start()
 		bcnode.submitBlock(payload)

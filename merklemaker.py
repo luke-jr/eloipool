@@ -56,17 +56,24 @@ class merkleMaker(threading.Thread):
 		self.lastWarning = {}
 		self.MinimumTxnUpdateWait = 5
 		self.overflowed = 0
+		self.DifficultyChangeMod = 2016
 	
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
 		
-		self.currentBlock = (None, None)
+		self.currentBlock = (None, None, None)
+		
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
 		self.LowestMerkleRoots = self.WorkQueueSizeRegular[1]
+		
+		if not hasattr(self, 'WorkQueueSizeClear'):
+			self.WorkQueueSizeClear = self.WorkQueueSizeLongpoll
+		self._MaxClearSize = max(self.WorkQueueSizeClear[1], self.WorkQueueSizeLongpoll[1])
 		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
-		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
-		self.LowestClearMerkleRoots = self.WorkQueueSizeLongpoll[1]
+		self.clearMerkleRoots = Queue(self._MaxClearSize)
+		self.LowestClearMerkleRoots = self.WorkQueueSizeClear[1]
+		self.nextMerkleRoots = Queue(self._MaxClearSize)
 		
 		if not hasattr(self, 'WarningDelay'):
 			self.WarningDelay = max(15, self.MinimumTxnUpdateWait * 2)
@@ -81,26 +88,55 @@ class merkleMaker(threading.Thread):
 		now = time()
 		self.updateMerkleTree()
 	
-	def updateBlock(self, newBlock, bits = None, _HBH = None):
+	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
-			if bits in (None, self.currentBlock[1]):
+			if height in (None, self.currentBlock[1]) and bits in (None, self.currentBlock[2]):
 				return
-			self.logger.error('Was working on block with wrong specs: %s (bits: %s->%s)' % (
-				b2a_hex(newBlock[::-1]).decode('utf8'),
-				b2a_hex(self.currentBlock[1][::-1]).decode('utf8'),
-				b2a_hex(bits[::-1]).decode('utf8'),
-			))
+			if not self.currentBlock[2] is None:
+				self.logger.error('Was working on block with wrong specs: %s (height: %d->%d; bits: %s->%s' % (
+					b2a_hex(newBlock[::-1]).decode('utf8'),
+					self.currentBlock[1],
+					height,
+					b2a_hex(self.currentBlock[2][::-1]).decode('utf8'),
+					b2a_hex(bits[::-1]).decode('utf8'),
+				))
 		
-		if bits is None:
-			bits = self.currentBlock[1]
-		if _HBH is None:
-			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
-		self.logger.info('New block: %s (bits: %s)' % _HBH)
-		self.merkleRoots.clear()
+		# Old block is invalid
 		self.currentMerkleTree = self.clearMerkleTree
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
-		self.currentBlock = (newBlock, bits)
+		
+		if height is None:
+			height = self.currentBlock[1] + 1
+		if bits is None:
+			if height % self.DifficultyChangeMod == 1 or self.currentBlock[2] is None:
+				self.logger.warning('New block: %s (height %d; bits: UNKNOWN)' % (b2a_hex(newBlock[::-1]).decode('utf8'), height))
+				# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
+				self.currentBlock = (None, height - 1, None)
+				self.clearMerkleRoots = Queue(0)
+				self.merkleRoots.clear()
+				return
+			else:
+				bits = self.currentBlock[2]
+		
+		if _HBH is None:
+			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
+		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
+		self.currentBlock = (newBlock, height, bits)
+		
+		if self.currentBlock[1] != height:
+			if self.currentBlock[1] == height - 1:
+				self.clearMerkleRoots = self.nextMerkleRoots
+				self.logger.debug('Adopting next-height clear merkleroots :)')
+			else:
+				if self.currentBlock[1]:
+					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
+				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+			self.nextMerkleRoots = Queue(self._MaxClearSize)
+		else:
+			self.logger.debug('Already using clear merkleroots for this height')
+		self.merkleRoots.clear()
+		
 		self.needMerkle = 2
 		self.onBlockChange()
 	
@@ -211,9 +247,13 @@ class merkleMaker(threading.Thread):
 		oMP = deepcopy(MP)
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
+		if 'height' in MP:
+			height = MP['height']
+		else:
+			height = self.access.getinfo()['blocks'] + 1
 		bits = bytes.fromhex(MP['bits'])[::-1]
-		if (prevBlock, bits) != self.currentBlock:
-			self.updateBlock(prevBlock, bits, _HBH=(MP['previousblockhash'], MP['bits']))
+		if (prevBlock, height, bits) != self.currentBlock:
+			self.updateBlock(prevBlock, height, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		
 		txnlist = MP['transactions']
 		if len(txnlist) and isinstance(txnlist[0], dict):
@@ -266,24 +306,24 @@ class merkleMaker(threading.Thread):
 		rv = bytes( (len(rv),) ) + rv
 		for v in self.CoinbaseAux.values():
 			rv += v
-		if len(rv) > 100:
+		if len(rv) > 95:
 			t = time()
 			if self.overflowed < t - 300:
 				self.logger.warning('Overflowing coinbase data! %d bytes long' % (len(rv),))
 				self.overflowed = t
 				self.isOverflowed = True
-			rv = rv[:100]
+			rv = rv[:95]
 		else:
 			self.isOverflowed = False
 		return rv
 	
-	def makeMerkleRoot(self, merkleTree):
+	def makeMerkleRoot(self, merkleTree, height):
 		cbtxn = merkleTree.data[0]
 		cb = self.makeCoinbase()
-		cbtxn.setCoinbase(cb)
+		cbtxn.setCoinbase(cb, height=height)
 		cbtxn.assemble()
 		merkleRoot = merkleTree.merkleRoot()
-		return (merkleRoot, merkleTree, cb)
+		return (merkleRoot, merkleTree, cbtxn.getCoinbase())
 	
 	_doing_last = None
 	def _doing(self, what):
@@ -314,31 +354,67 @@ class merkleMaker(threading.Thread):
 			logf = self.logger.warning
 		logf(wmsgf() if wmsgf else doin)
 	
-	def merkleMaker_I(self):
+	def _makeOne(self, putf, merkleTree, height):
+		MT = self.currentMerkleTree
+		height = self.currentBlock[1]
+		MR = self.makeMerkleRoot(MT, height=height)
+		# Only add it if the height hasn't changed in the meantime, to avoid a race
+		if self.currentBlock[1] == height:
+			putf(MR)
+	
+	def makeClear(self):
+		self._doing('clear merkle roots')
+		self._makeOne(self.clearMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1])
+	
+	def makeNext(self):
+		self._doing('longpoll merkle roots')
+		self._makeOne(self.nextMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1] + 1)
+	
+	def makeRegular(self):
+		self._doing('regular merkle roots')
+		self._makeOne(self.merkleRoots.append, self.currentMerkleTree, height=self.currentBlock[1])
+	
+	def merkleMaker_II(self):
 		global now
 		
-		# First, update merkle tree if we haven't for a while and aren't crunched for time
+		# No bits = no mining :(
+		if self.currentBlock[2] is None:
+			return self.updateMerkleTree()
+		
+		# First, ensure we have the minimum clear, next, and regular (in that order)
+		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[0]:
+			return self.makeClear()
+		if self.nextMerkleRoots.qsize() < self.WorkQueueSizeLongpoll[0]:
+			return self.makeNext()
+		if len(self.merkleRoots) < self.WorkQueueSizeRegular[0]:
+			return self.makeRegular()
+		
+		# If we've met the minimum requirements, consider updating the merkle tree
+		if self.nextMerkleUpdate <= now:
+			return self.updateMerkleTree()
+		
+		# Finally, fill up clear, next, and regular until we've met the maximums
+		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[1]:
+			return self.makeClear()
+		if self.nextMerkleRoots.qsize() < self.WorkQueueSizeLongpoll[1]:
+			return self.makeNext()
+		if len(self.merkleRoots) < self.WorkQueueSizeRegular[1] or self.merkleRoots[0][1] != self.currentMerkleTree:
+			return self.makeRegular()
+		
+		# Nothing left to do, fire onBlockUpdate event (if appropriate) and sleep
+		if self.needMerkle == 1:
+			self.onBlockUpdate()
+			self.needMerkle = False
+		self._doing('idle')
+		# TODO: rather than sleepspin, block until MinimumTxnUpdateWait expires or threading.Condition(?)
+		sleep(self.IdleSleepTime)
+	
+	def merkleMaker_I(self):
+		global now
 		now = time()
-		if self.nextMerkleUpdate <= now and self.clearMerkleRoots.qsize() > self.WorkQueueSizeLongpoll[0] and len(self.merkleRoots) > self.WorkQueueSizeRegular[0]:
-			self.updateMerkleTree()
-		# Next, fill up the longpoll queue first, since it can be used as a failover for the main queue
-		elif not self.clearMerkleRoots.full():
-			self._doing('blank merkle roots')
-			self.clearMerkleRoots.put(self.makeMerkleRoot(self.clearMerkleTree))
-		# Next, fill up the main queue (until they're all current)
-		elif len(self.merkleRoots) < self.WorkQueueSizeRegular[1] or self.merkleRoots[0][1] != self.currentMerkleTree:
-			if self.needMerkle == 1 and len(self.merkleRoots) >= self.WorkQueueSizeRegular[1]:
-				self.onBlockUpdate()
-				self.needMerkle = False
-			self._doing('regular merkle roots')
-			self.merkleRoots.append(self.makeMerkleRoot(self.currentMerkleTree))
-		else:
-			if self.needMerkle == 1:
-				self.onBlockUpdate()
-				self.needMerkle = False
-			self._doing('idle')
-			# TODO: rather than sleepspin, block until MinimumTxnUpdateWait expires or threading.Condition(?)
-			sleep(self.IdleSleepTime)
+		
+		self.merkleMaker_II()
+		
 		if self.needMerkle == 1 and now > self.needMerkleSince + self.WarningDelayTxnLongpoll:
 			self._floodWarning(now, 'NeedMerkle', lambda: 'Transaction-longpoll requested %d seconds ago, and still not ready. Is your server fast enough to keep up with your configured WorkQueueSizeRegular maximum?' % (now - self.needMerkleSince,))
 		if now > self.nextMerkleUpdate + self.WarningDelayMerkleUpdate:
@@ -356,7 +432,6 @@ class merkleMaker(threading.Thread):
 		super().start(*a, **k)
 	
 	def getMRD(self):
-		(prevBlock, bits) = self.currentBlock
 		try:
 			MRD = self.merkleRoots.pop()
 			self.LowestMerkleRoots = min(len(self.merkleRoots), self.LowestMerkleRoots)
@@ -369,6 +444,7 @@ class merkleMaker(threading.Thread):
 			self.LowestClearMerkleRoots = min(self.clearMerkleRoots.qsize(), self.LowestClearMerkleRoots)
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
+		(prevBlock, height, bits) = self.currentBlock
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
 	def getMC(self):
