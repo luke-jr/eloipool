@@ -562,7 +562,7 @@ if __name__ == "__main__":
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
-	import jsonrpc_getmemorypool
+	import jsonrpc_getblocktemplate
 	import jsonrpc_getwork
 	import jsonrpc_setworkaux
 	
