@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import bitcoin.script
 from .varlen import varlenDecode, varlenEncode
 from util import dblsha
 from struct import pack, unpack
@@ -37,7 +38,8 @@ class Txn:
 	
 	def setCoinbase(self, sigScript, seqno = 0xffffffff, height = None):
 		if not height is None:
-			sigScript = pack('<BL', 4, height) + sigScript
+			# NOTE: This is required to be the minimum valid length by BIP 34
+			sigScript = bitcoin.script.encodeUNum(height) + sigScript
 		self.inputs = ( ((_nullprev, 0xffffffff), sigScript, seqno), )
 	
 	def addInput(self, prevout, sigScript, seqno = 0xffffffff):
