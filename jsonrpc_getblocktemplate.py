@@ -69,7 +69,9 @@ class _getblocktemplate:
 		t = deepcopy(merkleTree.data[0])
 		t.setCoinbase(cb)
 		t.assemble()
-		rv['coinbasetxn'] = b2a_hex(t.data).decode('ascii')
+		txno = {}
+		txno['data'] = b2a_hex(t.data).decode('ascii')
+		rv['coinbasetxn'] = txno
 		return rv
 	
 	def doJSON_submitblock(self, data, params = _NoParams):
