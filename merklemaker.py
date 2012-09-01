@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from binascii import b2a_hex
+import bitcoin.script
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
@@ -296,7 +297,7 @@ class merkleMaker(threading.Thread):
 			self.needMerkle = 1
 			self.needMerkleSince = now
 	
-	def makeCoinbase(self):
+	def makeCoinbase(self, height):
 		now = int(time())
 		if now > _makeCoinbase[0]:
 			_makeCoinbase[0] = now
@@ -318,15 +319,16 @@ class merkleMaker(threading.Thread):
 			rv = rv[:95]
 		else:
 			self.isOverflowed = False
+		rv = bitcoin.script.encodeUNum(height) + rv
 		return rv
 	
 	def makeMerkleRoot(self, merkleTree, height):
 		cbtxn = merkleTree.data[0]
-		cb = self.makeCoinbase()
-		cbtxn.setCoinbase(cb, height=height)
+		cb = self.makeCoinbase(height=height)
+		cbtxn.setCoinbase(cb)
 		cbtxn.assemble()
 		merkleRoot = merkleTree.merkleRoot()
-		return (merkleRoot, merkleTree, cbtxn.getCoinbase())
+		return (merkleRoot, merkleTree, cb)
 	
 	_doing_last = None
 	def _doing(self, what):
@@ -451,9 +453,9 @@ class merkleMaker(threading.Thread):
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
 	def getMC(self):
-		(prevBlock, bits) = self.currentBlock
+		(prevBlock, height, bits) = self.currentBlock
 		mt = self.currentMerkleTree
-		cb = self.makeCoinbase()
+		cb = self.makeCoinbase(height=height)
 		return (None, mt, cb, prevBlock, bits)
 
 # merkleMaker tests
