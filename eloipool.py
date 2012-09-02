@@ -111,6 +111,30 @@ def blockChanged():
 	updateBlocks()
 
 
+from time import sleep, time
+import traceback
+
+def _WorkLogPruner_I(wl):
+	now = time()
+	pruned = 0
+	for username in wl:
+		userwork = wl[username]
+		for wli in tuple(userwork.keys()):
+			if now > userwork[wli][1] + 120:
+				del userwork[wli]
+				pruned += 1
+	WorkLogPruner.logger.debug('Pruned %d jobs' % (pruned,))
+
+def WorkLogPruner(wl):
+	while True:
+		try:
+			sleep(60)
+			_WorkLogPruner_I(wl)
+		except:
+			WorkLogPruner.logger.error(traceback.format_exc())
+WorkLogPruner.logger = logging.getLogger('WorkLogPruner')
+
+
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
@@ -593,6 +617,10 @@ if __name__ == "__main__":
 	MM.start()
 	
 	restoreState()
+	
+	prune_thr = threading.Thread(target=WorkLogPruner, args=(workLog,))
+	prune_thr.daemon = True
+	prune_thr.start()
 	
 	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
 	bcnode_thr.daemon = True
