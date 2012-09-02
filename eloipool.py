@@ -156,7 +156,7 @@ def getTarget(username, now):
 		return None
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
-		if now < lastUpdate + 120:
+		if now < lastUpdate + 120 and (targetIn is None or targetIn >= networkTarget):
 			return targetIn
 		if not work:
 			if targetIn:
@@ -170,6 +170,8 @@ def getTarget(username, now):
 	target = int(target * config.DynamicTargetGoal * deltaSec / 120 / work)
 	if target > config.ShareTarget:
 		target = None
+	elif target < networkTarget:
+		target = networkTarget
 	if target != targetIn:
 		pfx = 'Retargetting %s' % (repr(username),)
 		getTarget.logger.debug("%s from: %064x" % (pfx, targetIn,))
