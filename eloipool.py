@@ -118,6 +118,30 @@ def blockChanged():
 	updateBlocks()
 
 
+from time import sleep, time
+import traceback
+
+def _WorkLogPruner_I(wl):
+	now = time()
+	pruned = 0
+	for username in wl:
+		userwork = wl[username]
+		for wli in tuple(userwork.keys()):
+			if now > userwork[wli][1] + 120:
+				del userwork[wli]
+				pruned += 1
+	WorkLogPruner.logger.debug('Pruned %d jobs' % (pruned,))
+
+def WorkLogPruner(wl):
+	while True:
+		try:
+			sleep(60)
+			_WorkLogPruner_I(wl)
+		except:
+			WorkLogPruner.logger.error(traceback.format_exc())
+WorkLogPruner.logger = logging.getLogger('WorkLogPruner')
+
+
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
@@ -167,8 +191,9 @@ def getBlockHeader(username):
 def getBlockTemplate(username):
 	MC = MM.getMC()
 	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
-	wliLen = coinbase[0]
-	wli = coinbase[1:wliLen+1]
+	wliPos = coinbase[0] + 2
+	wliLen = coinbase[wliPos - 1]
+	wli = coinbase[wliPos:wliPos+wliLen]
 	workLog.setdefault(username, {})[wli] = (MC, time())
 	return MC
 
@@ -186,22 +211,41 @@ def assembleBlock(blkhdr, txlist):
 		payload += tx.data
 	return payload
 
-def blockSubmissionThread(payload, share):
+def blockSubmissionThread(payload, blkhash, share):
+	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
+	nexterr = 0
 	while True:
 		try:
-			reason = UpstreamBitcoindJSONRPC.getmemorypool(payload, {})
+			# BIP 22 standard submitblock
+			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
 		except:
-			pass
-		try:
-			reason = UpstreamBitcoindJSONRPC.getmemorypool(payload)
-			reason = None if reason else 'rejected'
-			break
-		except:
-			pass
-	if reason:
-		blockSubmissionThread.logger.warning('Upstream block submission failed: %s' % (reason,))
+			try:
+				try:
+					# bitcoind 0.5/0.6 getmemorypool
+					rv = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+				except:
+					# Old BIP 22 draft getmemorypool
+					rv = UpstreamBitcoindJSONRPC.getmemorypool(payload, {})
+				if rv is True:
+					rv = None
+				elif rv is False:
+					rv = 'rejected'
+				break
+			except:
+				pass
+			now = time()
+			if now > nexterr:
+				# FIXME: This will show "Method not found" on pre-BIP22 servers
+				RaiseRedFlags(traceback.format_exc())
+				nexterr = now + 5
+			if MM.currentBlock[0] not in myblock:
+				RaiseRedFlags('Giving up on submitting block upstream')
+				return
+	if rv:
+		# FIXME: The returned value could be a list of multiple responses
+		blockSubmissionThread.logger.warning('Upstream block submission failed: %s' % (rv,))
 	if share['upstreamRejectReason'] is PendingUpstream:
 		share['upstreamRejectReason'] = reason
 		share['upstreamResult'] = not reason
@@ -241,8 +285,9 @@ def checkShare(share):
 		cbtxn = bitcoin.txn.Txn(pl)
 		cbtxn.disassemble(retExtra=True)
 		coinbase = cbtxn.getCoinbase()
-		wliLen = coinbase[0]
-		wli = coinbase[1:wliLen+1]
+		wliPos = coinbase[0] + 2
+		wliLen = coinbase[wliPos - 1]
+		wli = coinbase[wliPos:wliPos+wliLen]
 		mode = 'MC'
 		moden = 1
 	else:
@@ -298,7 +343,7 @@ def checkShare(share):
 		else:
 			share['upstreamRejectReason'] = None
 			share['upstreamResult'] = True
-		threading.Thread(target=blockSubmissionThread, args=(payload, share)).start()
+		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash, share)).start()
 		if isBlock:
 			bcnode.submitBlock(payload)
 			MM.updateBlock(blkhash)
@@ -592,7 +637,7 @@ if __name__ == "__main__":
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
-	import jsonrpc_getmemorypool
+	import jsonrpc_getblocktemplate
 	import jsonrpc_getwork
 	import jsonrpc_setworkaux
 	
@@ -621,6 +666,10 @@ if __name__ == "__main__":
 	MM.start()
 	
 	restoreState()
+	
+	prune_thr = threading.Thread(target=WorkLogPruner, args=(workLog,))
+	prune_thr.daemon = True
+	prune_thr.start()
 	
 	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
 	bcnode_thr.daemon = True

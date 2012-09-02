@@ -65,6 +65,15 @@ UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 # Share hashes must be below this to be submitted to gotwork
 GotWorkTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
+# Aim to produce blocks with transaction counts that are a power of two
+# This helps avoid any chance of someone abusing CVE-2012-2459 with them
+# 1 = cut out feeless transactions; 2 = cut out even fee-included transactions (if possible)
+POT = 2
+
+# Avoid mining feeless transactions except to satisfy POT
+# Note this only works if POT is in fact enabled in the first place
+Greedy = False
+
 ### Settings relating to network services
 
 # Addresses to listen on for JSON-RPC getwork server

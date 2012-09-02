@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from binascii import b2a_hex
+import bitcoin.script
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
 from collections import deque
@@ -35,16 +36,20 @@ inf = float('inf')
 
 class merkleMaker(threading.Thread):
 	OldGMP = None
+	GBTCaps = [
+		'coinbasevalue',
+		'coinbase/append',
+		'coinbase',
+		'generation',
+		'time',
+		'transactions/remove',
+		'prevblock',
+	]
+	GBTReq = {
+		'capabilities': GBTCaps,
+	}
 	GMPReq = {
-		'capabilities': [
-			'coinbasevalue',
-			'coinbase/append',
-			'coinbase',
-			'generation',
-			'time',
-			'transactions/remove',
-			'prevblock',
-		],
+		'capabilities': GBTCaps,
 		'tx': 'obj',
 	}
 	
@@ -165,6 +170,7 @@ class merkleMaker(threading.Thread):
 		
 		return True
 	
+	# Aggressive "Power Of Two": Remove transactions even with fees to reach our goal
 	def _APOT(self, txninfo, pot, MP, POTInfo):
 		if pot <= MP['txrequired']:
 			self._floodWarning(now, 'APOT-Req', doin='Aggressive POT blocked by upstream required transaction', logf=self.logger.info)
@@ -203,6 +209,8 @@ class merkleMaker(threading.Thread):
 			self._trimBlock(MP, txnlist, txninfo, 'SigOpLimit', lambda x: 'Making blocks over 20k SigOp limit (%d; %s)' % (blocksigops, x))
 			blocksigops -= txnsigops
 		
+		# Aim to produce blocks with "Power Of Two" transaction counts
+		# This helps avoid any chance of someone abusing CVE-2012-2459 with them
 		POTMode = getattr(self, 'POT', 1)
 		txncount = len(txnlist) + 1
 		if POTMode and 'transactions' not in MP['mutable'] and 'transactions/remove' not in MP['mutable']:
@@ -326,24 +334,27 @@ class merkleMaker(threading.Thread):
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		
 		try:
-			MP = self.access.getmemorypool(self.GMPReq)
+			# First, try BIP 22 standard getblocktemplate :)
+			MP = self.access.getblocktemplate(self.GBTReq)
 			self.OldGMP = False
-			oMP = None
 		except:
-			MP = False
 			try:
-				oMP = self.access.getmemorypool()
+				# Failing that, give BIP 22 draft (2012-02 through 2012-07) getmemorypool a chance
+				MP = self.access.getmemorypool(self.GMPReq)
 			except:
-				oMP = False
-			if oMP is False:
+				try:
+					# Finally, fall back to bitcoind 0.5/0.6 getmemorypool
+					MP = self.access.getmemorypool()
+				except:
+					MP = False
+			if MP is False:
 				# This way, we get the error from the BIP22 call if the old one fails too
 				raise
-		if MP is False:
+			
 			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
 			if not self.OldGMP:
 				self.OldGMP = True
-				self.logger.warning('Upstream server is not BIP 22 compliant')
-			MP = oMP or self.access.getmemorypool()
+				self.logger.warning('Upstream server is not BIP 22 compatible')
 		
 		oMP = deepcopy(MP)
 		
@@ -474,7 +485,7 @@ class merkleMaker(threading.Thread):
 			self.needMerkle = 1
 			self.needMerkleSince = now
 	
-	def makeCoinbase(self, pfx = b''):
+	def makeCoinbase(self, height, pfx = b''):
 		now = int(time())
 		if now > _makeCoinbase[0]:
 			_makeCoinbase[0] = now
@@ -497,16 +508,17 @@ class merkleMaker(threading.Thread):
 			rv = rv[:95]
 		else:
 			self.isOverflowed = False
+		rv = bitcoin.script.encodeUNum(height) + rv
 		return rv
 	
 	def makeMerkleRoot(self, merkleTree, height):
 		cbtxn = merkleTree.data[0]
 		cbpfx = merkleTree.coinbasePrefix
-		cb = self.makeCoinbase(cbpfx)
-		cbtxn.setCoinbase(cb, height=height)
+		cb = self.makeCoinbase(height=height, pfx=cbpfx)
+		cbtxn.setCoinbase(cb)
 		cbtxn.assemble()
 		merkleRoot = merkleTree.merkleRoot()
-		return (merkleRoot, merkleTree, cbtxn.getCoinbase())
+		return (merkleRoot, merkleTree, cb)
 	
 	_doing_last = None
 	def _doing(self, what):
@@ -635,12 +647,12 @@ class merkleMaker(threading.Thread):
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
 	def getMC(self):
-		(prevBlock, bits) = self.currentBlock
+		(prevBlock, height, bits) = self.currentBlock
 		mt = self.currentMerkleTree
 		cbpfx = mt.coinbasePrefix
-		cb = self.makeCoinbase(cbpfx)
-		return (None, mt, cb, prevBlock, bits)
-	
+		cb = self.makeCoinbase(height=height, pfx=cbpfx)
+		return (height, mt, cb, prevBlock, bits)
+
 # merkleMaker tests
 def _test():
 	global now
