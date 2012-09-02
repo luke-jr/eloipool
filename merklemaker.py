@@ -463,7 +463,8 @@ class merkleMaker(threading.Thread):
 		(prevBlock, height, bits) = self.currentBlock
 		mt = self.currentMerkleTree
 		cb = self.makeCoinbase(height=height)
-		return (height, mt, cb, prevBlock, bits)
+		rollPrevBlk = (mt == self.clearMerkleTree)
+		return (height, mt, cb, prevBlock, bits, rollPrevBlk)
 
 # merkleMaker tests
 def _test():

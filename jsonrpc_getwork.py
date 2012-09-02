@@ -43,12 +43,7 @@ class _getwork:
 		if not data is None:
 			return self.doJSON_submitwork(data)
 		rv = dict(self.getwork_rv_template)
-		hdr = self.server.getBlockHeader(self.Username)
-		if isinstance(hdr, tuple):
-			(hdr, x, target) = hdr
-		else:
-			x = None
-			target = server.ShareTarget
+		(hdr, x, target) = self.server.getBlockHeader(self.Username)
 		
 		# FIXME: this assumption breaks with internal rollntime
 		# NOTE: noncerange needs to set nonce to start value at least

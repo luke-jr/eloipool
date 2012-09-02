@@ -49,8 +49,8 @@ class _getblocktemplate:
 			self.processLP(params['longpollid'])
 		
 		rv = dict(self.getblocktemplate_rv_template)
-		(MC, target) = self.server.getBlockTemplate(self.Username)
-		(height, merkleTree, cb, prevBlock, bits) = MC
+		(MC, wld, target) = self.server.getBlockTemplate(self.Username)
+		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
 		rv['height'] = height
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
 		rv['longpollid'] = str(self.server.LPId)

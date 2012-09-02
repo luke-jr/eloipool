@@ -178,29 +178,30 @@ def getTarget(username, now):
 	return target
 getTarget.logger = logging.getLogger('getTarget')
 
-def setWLI(username, wli, wld):
+def RegisterWork(username, wli, wld):
 	now = time()
 	target = getTarget(username, now)
-	workLog.setdefault(username, {})[wli] = (wld, now, target)
+	wld = tuple(wld) + (target,)
+	workLog.setdefault(username, {})[wli] = (wld, now)
 	return target or config.ShareTarget
 
 def getBlockHeader(username):
 	MRD = MM.getMRD()
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD[:6]
 	timestamp = pack('<L', int(time()))
 	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	target = setWLI(username, merkleRoot, MRD)
+	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
 
 def getBlockTemplate(username):
 	MC = MM.getMC()
-	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	target = setWLI(username, wli, MC)
-	return (MC, target)
+	target = RegisterWork(username, wli, MC)
+	return (MC, workLog[username][wli], target)
 
 loggersShare = []
 
@@ -291,7 +292,7 @@ def checkShare(share):
 	MWL = workLog[username]
 	if wli not in MWL:
 		raise RejectedShare('unknown-work')
-	(wld, issueT, workTarget) = MWL[wli]
+	(wld, issueT) = MWL[wli]
 	share[mode] = wld
 	
 	if data in DupeShareHACK:
@@ -310,6 +311,7 @@ def checkShare(share):
 	
 	workMerkleTree = wld[1]
 	workCoinbase = wld[2]
+	workTarget = wld[6]
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
@@ -367,12 +369,14 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	status = userStatus[username]
-	target = status[0] or config.ShareTarget
-	if target == workTarget:
-		userStatus[username][2] += 1
-	else:
-		userStatus[username][2] += float(target) / workTarget
+	if config.DynamicTargetting and username in userStatus:
+		# NOTE: userStatus[username] only doesn't exist across restarts
+		status = userStatus[username]
+		target = status[0] or config.ShareTarget
+		if target == workTarget:
+			userStatus[username][2] += 1
+		else:
+			userStatus[username][2] += float(target) / workTarget
 	
 	if moden:
 		cbpre = cbtxn.getCoinbase()
