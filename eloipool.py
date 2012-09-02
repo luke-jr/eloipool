@@ -124,6 +124,7 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
+from math import log
 from struct import pack, unpack
 import threading
 from time import time
@@ -169,8 +170,14 @@ def getTarget(username, now):
 	target = int(target * config.DynamicTargetGoal * deltaSec / 120 / work)
 	if target >= config.ShareTarget:
 		target = None
-	elif target < networkTarget:
-		target = networkTarget
+	else:
+		if target < networkTarget:
+			target = networkTarget
+		if config.DynamicTargetting == 2:
+			# Round target to a power of two :)
+			target = 2**int(log(target, 2) + 1) - 1
+		if target == config.ShareTarget:
+			target = None
 	if target != targetIn:
 		pfx = 'Retargetting %s' % (repr(username),)
 		getTarget.logger.debug("%s from: %064x" % (pfx, targetIn or config.ShareTarget,))
