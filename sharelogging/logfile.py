@@ -33,7 +33,7 @@ class logfile(threading.Thread):
 		self.fn=filename
 		if 'format' not in ka:
 			_logger.warn('"format" not specified for logfile logger, but default may vary!')
-			ka['format'] = "{time} {Q(remoteHost)} {username} {YN(not(rejectReason))} {dash(YN(upstreamResult))} {dash(rejectReason)} {solution}\n"
+			ka['format'] = "{time} {Q(remoteHost)} {username} {YN(not(rejectReason))} {dash(YN(upstreamResult))} {dash(rejectReason)} {solution} {target2pdiff(target)}\n"
 		self.fmt = shareLogFormatter(ka['format'], '%s')
 		self.queue = deque()
 		self.start()
