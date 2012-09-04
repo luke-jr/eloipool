@@ -128,7 +128,7 @@ from math import log
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, dblsha, hash2int, swap32
+from util import RejectedShare, dblsha, hash2int, swap32, target2pdiff
 import jsonrpc
 import traceback
 
@@ -180,8 +180,10 @@ def getTarget(username, now):
 			target = None
 	if target != targetIn:
 		pfx = 'Retargetting %s' % (repr(username),)
-		getTarget.logger.debug("%s from: %064x" % (pfx, targetIn or config.ShareTarget,))
-		getTarget.logger.debug("%s   to: %064x" % (pfx, target   or config.ShareTarget,))
+		tin = targetIn or config.ShareTarget
+		getTarget.logger.debug("%s from: %064x (pdiff %s)" % (pfx, tin, target2pdiff(tin)))
+		tgt = target or config.ShareTarget
+		getTarget.logger.debug("%s   to: %064x (pdiff %s)" % (pfx, tgt, target2pdiff(tgt)))
 	userStatus[username] = [target, now, 0]
 	return target
 getTarget.logger = logging.getLogger('getTarget')
