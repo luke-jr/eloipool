@@ -18,6 +18,9 @@ DynamicTargetting = 0
 # How many shares per minute to try to achieve on average
 DynamicTargetGoal = 8
 
+# Number of seconds hashrate is measured over
+DynamicTargetWindow = 120
+
 # Minimum and maximum of merkle roots to keep queued
 WorkQueueSizeRegular = (0x100, 0x1000)
 

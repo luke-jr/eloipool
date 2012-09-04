@@ -139,7 +139,9 @@ if hasattr(config, 'GotWorkURI'):
 if not hasattr(config, 'DynamicTargetting'):
 	config.DynamicTargetting = 0
 else:
-	config.DynamicTargetGoal *= 2
+	if not hasattr(config, 'DynamicTargetWindow'):
+		config.DynamicTargetWindow = 120
+	config.DynamicTargetGoal *= config.DynamicTargetWindow / 60
 
 def submitGotwork(info):
 	try:
@@ -157,7 +159,7 @@ def getTarget(username, now):
 		return None
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
-		if now < lastUpdate + 120 and (targetIn is None or targetIn >= networkTarget):
+		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
 			return targetIn
 		if not work:
 			if targetIn:
@@ -167,7 +169,7 @@ def getTarget(username, now):
 	
 	deltaSec = now - lastUpdate
 	target = targetIn or config.ShareTarget
-	target = int(target * config.DynamicTargetGoal * deltaSec / 120 / work)
+	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
 	if target >= config.ShareTarget:
 		target = None
 	else:
