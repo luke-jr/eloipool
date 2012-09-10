@@ -123,6 +123,7 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
+from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
@@ -142,9 +143,8 @@ def submitGotwork(info):
 
 def getBlockHeader(username):
 	MRD = MM.getMRD()
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
-	timestamp = pack('<L', int(time()))
-	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	merkleRoot = MRD[0]
+	hdr = MakeBlockHeader(MRD)
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	return (hdr, workLog[username][merkleRoot])
 
@@ -163,12 +163,7 @@ RBPs = []
 
 from bitcoin.varlen import varlenEncode, varlenDecode
 import bitcoin.txn
-def assembleBlock(blkhdr, txlist):
-	payload = blkhdr
-	payload += varlenEncode(len(txlist))
-	for tx in txlist:
-		payload += tx.data
-	return payload
+from merklemaker import assembleBlock
 
 def blockSubmissionThread(payload):
 	while True:

@@ -17,6 +17,7 @@
 from binascii import b2a_hex
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
+from bitcoin.varlen import varlenEncode, varlenDecode
 from collections import deque
 from copy import deepcopy
 from queue import Queue
@@ -30,6 +31,19 @@ from time import sleep, time
 import traceback
 
 _makeCoinbase = [0, 0]
+
+def MakeBlockHeader(MRD):
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
+	timestamp = pack('<L', int(time()))
+	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	return hdr
+
+def assembleBlock(blkhdr, txlist):
+	payload = blkhdr
+	payload += varlenEncode(len(txlist))
+	for tx in txlist:
+		payload += tx.data
+	return payload
 
 class merkleMaker(threading.Thread):
 	OldGMP = None
@@ -284,8 +298,34 @@ class merkleMaker(threading.Thread):
 		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
 			newMerkleTree.POTInfo = MP.get('POTInfo')
 			newMerkleTree.oMP = oMP
-			self.logger.debug('Updating merkle tree')
-			self.currentMerkleTree = newMerkleTree
+			
+			if (not self.OldGMP) and 'proposal' in MP.get('capabilities', ()):
+				(prevBlock, height, bits) = self.currentBlock
+				coinbase = self.makeCoinbase(height=height)
+				cbtxn.setCoinbase(coinbase)
+				cbtxn.assemble()
+				merkleRoot = newMerkleTree.merkleRoot()
+				MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
+				blkhdr = MakeBlockHeader(MRD)
+				data = assembleBlock(blkhdr, txnlist)
+				propose = self.access.getblocktemplate({
+					"mode": "proposal",
+					"data": b2a_hex(data).decode('utf8'),
+				})
+				if propose is None:
+					self.logger.debug('Updating merkle tree (upstream accepted proposal)')
+					self.currentMerkleTree = newMerkleTree
+				else:
+					self.RejectedProposal = (newMerkleTree, propose)
+					try:
+						propose = propose['reject-reason']
+					except:
+						pass
+					self.logger.error('Upstream rejected proposed block: %s' % (propose,))
+			else:
+				self.logger.debug('Updating merkle tree (no proposal support)')
+				self.currentMerkleTree = newMerkleTree
+		
 		self.lastMerkleUpdate = now
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 		
