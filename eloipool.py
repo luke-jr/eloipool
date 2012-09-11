@@ -251,7 +251,7 @@ def checkShare(share):
 		pl = share['blkdata']
 		(txncount, pl) = varlenDecode(pl)
 		cbtxn = bitcoin.txn.Txn(pl)
-		cbtxn.disassemble(retExtra=True)
+		othertxndata = cbtxn.disassemble(retExtra=True)
 		coinbase = cbtxn.getCoinbase()
 		wliPos = coinbase[0] + 2
 		wliLen = coinbase[wliPos - 1]
@@ -359,9 +359,10 @@ def checkShare(share):
 		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
 			raise RejectedShare('bad-txnmrklroot')
 		
-		allowed = assembleBlock(data, txlist)
-		if allowed != share['data'] + share['blkdata']:
-			raise RejectedShare('bad-txns')
+		if len(othertxndata):
+			allowed = assembleBlock(data, txlist)[80:]
+			if allowed != share['blkdata']:
+				raise RejectedShare('bad-txns')
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
