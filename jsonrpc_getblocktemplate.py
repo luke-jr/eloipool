@@ -31,6 +31,7 @@ class _getblocktemplate:
 		'longpoll': '/LP',
 		'mutable': [
 			'coinbase/append',
+			'submit/coinbase',
 		],
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
