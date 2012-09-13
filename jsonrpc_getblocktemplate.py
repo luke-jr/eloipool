@@ -50,8 +50,8 @@ class _getblocktemplate:
 			self.processLP(params['longpollid'])
 		
 		rv = dict(self.getblocktemplate_rv_template)
-		MC = self.server.getBlockTemplate(self.Username)
-		(height, merkleTree, cb, prevBlock, bits) = MC
+		(MC, wld, target) = self.server.getBlockTemplate(self.Username)
+		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
 		rv['height'] = height
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
 		rv['longpollid'] = str(self.server.LPId)
@@ -68,6 +68,7 @@ class _getblocktemplate:
 		rv['curtime'] = now
 		rv['maxtime'] = now + 120
 		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
+		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])
 		t.setCoinbase(cb)
 		t.assemble()

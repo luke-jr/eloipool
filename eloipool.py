@@ -90,6 +90,7 @@ import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
+userStatus = {}
 networkTarget = None
 DupeShareHACK = {}
 
@@ -147,11 +148,12 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
+from math import log
 from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, dblsha, hash2int, swap32
+from util import RejectedShare, dblsha, hash2int, swap32, target2pdiff
 import jsonrpc
 import traceback
 
@@ -159,27 +161,83 @@ gotwork = None
 if hasattr(config, 'GotWorkURI'):
 	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
 
+if not hasattr(config, 'DynamicTargetting'):
+	config.DynamicTargetting = 0
+else:
+	if not hasattr(config, 'DynamicTargetWindow'):
+		config.DynamicTargetWindow = 120
+	config.DynamicTargetGoal *= config.DynamicTargetWindow / 60
+
 def submitGotwork(info):
 	try:
 		gotwork.gotwork(info)
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
+def getTarget(username, now):
+	if not config.DynamicTargetting:
+		return None
+	if username in userStatus:
+		status = userStatus[username]
+	else:
+		userStatus[username] = [None, now, 0]
+		return None
+	(targetIn, lastUpdate, work) = status
+	if work <= config.DynamicTargetGoal:
+		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
+			return targetIn
+		if not work:
+			if targetIn:
+				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
+				userStatus[username] = [None, now, 0]
+			return None
+	
+	deltaSec = now - lastUpdate
+	target = targetIn or config.ShareTarget
+	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
+	if target >= config.ShareTarget:
+		target = None
+	else:
+		if target < networkTarget:
+			target = networkTarget
+		if config.DynamicTargetting == 2:
+			# Round target to a power of two :)
+			target = 2**int(log(target, 2) + 1) - 1
+		if target == config.ShareTarget:
+			target = None
+	if target != targetIn:
+		pfx = 'Retargetting %s' % (repr(username),)
+		tin = targetIn or config.ShareTarget
+		getTarget.logger.debug("%s from: %064x (pdiff %s)" % (pfx, tin, target2pdiff(tin)))
+		tgt = target or config.ShareTarget
+		getTarget.logger.debug("%s   to: %064x (pdiff %s)" % (pfx, tgt, target2pdiff(tgt)))
+	userStatus[username] = [target, now, 0]
+	return target
+getTarget.logger = logging.getLogger('getTarget')
+
+def RegisterWork(username, wli, wld):
+	now = time()
+	target = getTarget(username, now)
+	wld = tuple(wld) + (target,)
+	workLog.setdefault(username, {})[wli] = (wld, now)
+	return target or config.ShareTarget
+
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	merkleRoot = MRD[0]
 	hdr = MakeBlockHeader(MRD)
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	return (hdr, workLog[username][merkleRoot])
+	target = RegisterWork(username, merkleRoot, MRD)
+	return (hdr, workLog[username][merkleRoot], target)
 
 def getBlockTemplate(username):
 	MC = MM.getMC()
-	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	workLog.setdefault(username, {})[wli] = (MC, time())
-	return MC
+	target = RegisterWork(username, wli, MC)
+	return (MC, workLog[username][wli], target)
 
 loggersShare = []
 
@@ -220,7 +278,6 @@ def blockSubmissionThread(payload, blkhash):
 		# FIXME: The returned value could be a list of multiple responses
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
-_STA = '%064x' % (config.ShareTarget,)
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
@@ -285,6 +342,7 @@ def checkShare(share):
 	
 	workMerkleTree = wld[1]
 	workCoinbase = wld[2]
+	workTarget = wld[6]
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
@@ -327,10 +385,12 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
-	if blkhashn > config.ShareTarget:
+	if workTarget is None:
+		workTarget = config.ShareTarget
+	if blkhashn > workTarget:
 		raise RejectedShare('high-hash')
-	share['target'] = config.ShareTarget
-	share['_targethex'] = _STA
+	share['target'] = workTarget
+	share['_targethex'] = '%064x' % (workTarget,)
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
 	if shareTime < issueT - 120:
@@ -339,6 +399,15 @@ def checkShare(share):
 		raise RejectedShare('time-too-old')
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
+	
+	if config.DynamicTargetting and username in userStatus:
+		# NOTE: userStatus[username] only doesn't exist across restarts
+		status = userStatus[username]
+		target = status[0] or config.ShareTarget
+		if target == workTarget:
+			userStatus[username][2] += 1
+		else:
+			userStatus[username][2] += float(target) / workTarget
 	
 	if moden:
 		cbpre = cbtxn.getCoinbase()

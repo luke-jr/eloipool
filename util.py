@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from hashlib import sha256
+from math import log
 import re
 import string
 from struct import unpack
@@ -24,6 +25,15 @@ def YN(b):
 	if b is None:
 		return None
 	return 'Y' if b else 'N'
+
+def target2pdiff(target):
+	if target is None:
+		return None
+	pdiff = round(2**(224 - log(target, 2)), 8)
+	pdiff_int = int(pdiff)
+	if pdiff == pdiff_int:
+		pdiff = pdiff_int
+	return pdiff
 
 class shareLogFormatter:
 	_re_x = re.compile(r'^\s*(\w+)\s*(?:\(\s*(.*?)\s*\))?\s*$')
@@ -90,6 +100,10 @@ class shareLogFormatter:
 	@classmethod
 	def get_field_YN(self, subfunc):
 		return lambda s: YN(subfunc(s))
+	
+	@classmethod
+	def get_field_target2pdiff(self, subfunc):
+		return lambda s: target2pdiff(subfunc(s))
 
 def dblsha(b):
 	return sha256(sha256(b).digest()).digest()
