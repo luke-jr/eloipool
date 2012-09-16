@@ -18,6 +18,8 @@ import asynchat
 from base64 import b64decode
 from datetime import datetime
 from email.utils import formatdate
+from gzip import GzipFile
+import io
 import logging
 import networkserver
 import re
@@ -50,6 +52,13 @@ class HTTPHandler(networkserver.SocketHandler):
 			headers.setdefault('Transfer-Encoding', 'chunked')
 			body = b''
 		else:
+			if 'gzip' in self.quirks:
+				headers['Content-Encoding'] = 'gzip'
+				headers['Vary'] = 'Content-Encoding'
+				gz = io.BytesIO()
+				with GzipFile(fileobj=gz, mode='wb') as raw:
+					raw.write(body)
+				body = gz.getvalue()
 			headers['Content-Length'] = len(body)
 		for k, v in headers.items():
 			if v is None: continue
@@ -63,6 +72,10 @@ class HTTPHandler(networkserver.SocketHandler):
 		if headers is None: headers = {}
 		headers.setdefault('Content-Type', 'text/plain')
 		return self.sendReply(500, reason.encode('utf8'), headers)
+	
+	def doHeader_accept_encoding(self, value):
+		if b'gzip' in value:
+			self.quirks['gzip'] = True
 	
 	def doHeader_authorization(self, value):
 		value = value.split(b' ')
@@ -224,4 +237,5 @@ class HTTPHandler(networkserver.SocketHandler):
 		self.quirks = dict(self.default_quirks)
 		self.reset_request()
 	
+setattr(HTTPHandler, 'doHeader_accept-encoding', HTTPHandler.doHeader_accept_encoding);
 setattr(HTTPHandler, 'doHeader_content-length', HTTPHandler.doHeader_content_length);
