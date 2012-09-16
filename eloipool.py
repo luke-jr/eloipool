@@ -311,7 +311,7 @@ def checkShare(share):
 	
 	workMerkleTree = wld[1]
 	workCoinbase = wld[2]
-	workTarget = wld[6]
+	workTarget = wld[6] if len(wld) > 6 else None
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
