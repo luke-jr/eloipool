@@ -248,7 +248,8 @@ from bitcoin.varlen import varlenEncode, varlenDecode
 import bitcoin.txn
 from merklemaker import assembleBlock
 
-def blockSubmissionThread(payload, blkhash):
+RBFs = []
+def blockSubmissionThread(payload, blkhash, share):
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
@@ -272,10 +273,12 @@ def blockSubmissionThread(payload, blkhash):
 				RaiseRedFlags(traceback.format_exc())
 				nexterr = now + 5
 			if MM.currentBlock[0] not in myblock:
+				RBFs.append( (('next block', MM.currentBlock), payload, blkhash, share) )
 				RaiseRedFlags('Giving up on submitting block upstream')
 				return
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
+		RBFs.append( (('upstream reject', rv), payload, blkhash, share) )
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
 def checkShare(share):
@@ -360,7 +363,7 @@ def checkShare(share):
 			payload = share['data'] + share['blkdata']
 		logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 		RBPs.append(payload)
-		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash)).start()
+		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash, share)).start()
 		bcnode.submitBlock(payload)
 		share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
