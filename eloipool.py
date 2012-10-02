@@ -262,6 +262,7 @@ def checkShare(share):
 		wli = shareMerkleRoot
 		mode = 'MRD'
 		moden = 0
+		coinbase = None
 	
 	MWL = workLog[username]
 	if wli not in MWL:
@@ -290,7 +291,7 @@ def checkShare(share):
 	txlist = workMerkleTree.data
 	txlist = [deepcopy(txlist[0]),] + txlist[1:]
 	cbtxn = txlist[0]
-	cbtxn.setCoinbase(workCoinbase)
+	cbtxn.setCoinbase(coinbase or workCoinbase)
 	cbtxn.assemble()
 	
 	if blkhashn <= networkTarget:
@@ -345,7 +346,7 @@ def checkShare(share):
 		raise RejectedShare('time-too-new')
 	
 	if moden:
-		cbpre = cbtxn.getCoinbase()
+		cbpre = workCoinbase
 		cbpreLen = len(cbpre)
 		if coinbase[:cbpreLen] != cbpre:
 			raise RejectedShare('bad-cb-prefix')
@@ -358,8 +359,6 @@ def checkShare(share):
 		if len(coinbase) > 100:
 			raise RejectedShare('bad-cb-length')
 		
-		cbtxn.setCoinbase(coinbase)
-		cbtxn.assemble()
 		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
 			raise RejectedShare('bad-txnmrklroot')
 		
