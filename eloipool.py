@@ -279,7 +279,7 @@ def blockSubmissionThread(payload, blkhash, share):
 				return
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
-		RBFs.append( (('upstream reject', rv, now), payload, blkhash, share) )
+		RBFs.append( (('upstream reject', rv, time()), payload, blkhash, share) )
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
 def checkShare(share):
