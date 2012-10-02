@@ -299,7 +299,11 @@ def checkShare(share):
 		if not moden:
 			payload = assembleBlock(data, txlist)
 		else:
-			payload = share['data'] + share['blkdata']
+			payload = share['data']
+			if len(othertxndata):
+				payload += share['blkdata']
+			else:
+				payload += assembleBlock(data, txlist)[80:]
 		logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash)).start()
