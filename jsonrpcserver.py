@@ -165,17 +165,19 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			pass
 		self.LPUntrack()
 	
-	def wakeLongpoll(self):
+	def wakeLongpoll(self, wantClear = False):
 		now = time()
 		if now < self.waitTime:
-			self.changeTask(self.wakeLongpoll, self.waitTime)
+			self.changeTask(lambda: self.wakeLongpoll(wantClear), self.waitTime)
 			return
 		else:
 			self.changeTask(None)
 		
 		self.LPUntrack()
 		
+		self.server.tls.wantClear = wantClear
 		rv = self._doJSON_i(*self._LPCall, longpoll=True)
+		self.server.tls.wantClear = False
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
@@ -307,13 +309,14 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		if self.LPRequest == 1:
 			self._LPsch()
 	
-	def wakeLongpoll(self):
+	def wakeLongpoll(self, wantClear = False):
 		if self.LPRequest:
 			self.logger.info('Ignoring longpoll attempt while another is waiting')
 			return
-		self.LPRequest = 1
 		self._LPId += 1
 		self.LPId = '%d %d' % (time(), self._LPId)
+		self._LPWantClear = wantClear
+		self.LPRequest = 1
 		self.wakeup()
 	
 	def _LPsch(self):
@@ -340,7 +343,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		
 		for ic in C:
 			try:
-				ic.wakeLongpoll()
+				ic.wakeLongpoll(self._LPWantClear)
 			except socket.error:
 				OC -= 1
 				# Ignore socket errors; let the main event loop take care of them later

@@ -499,9 +499,9 @@ class merkleMaker(threading.Thread):
 		(prevBlock, height, bits) = self.currentBlock
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
-	def getMC(self):
+	def getMC(self, wantClear = False):
 		(prevBlock, height, bits) = self.currentBlock
-		mt = self.currentMerkleTree
+		mt = self.clearMerkleTree if wantClear else self.currentMerkleTree
 		cb = self.makeCoinbase(height=height)
 		rollPrevBlk = (mt == self.clearMerkleTree)
 		return (height, mt, cb, prevBlock, bits, rollPrevBlk)

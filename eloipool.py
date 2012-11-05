@@ -109,7 +109,7 @@ def blockChanged():
 	else:
 		networkTarget = Bits2Target(bits)
 	workLog.clear()
-	updateBlocks()
+	server.wakeLongpoll(wantClear=True)
 
 
 from time import sleep, time
@@ -230,8 +230,15 @@ def getBlockHeader(username):
 	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
 
-def getBlockTemplate(username):
-	MC = MM.getMC()
+def getBlockTemplate(username, p_magic = None):
+	if server.tls.wantClear:
+		wantClear = True
+	elif p_magic and username not in workLog:
+		wantClear = True
+		p_magic[0] = True
+	else:
+		wantClear = False
+	MC = MM.getMC(wantClear)
 	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
@@ -667,6 +674,8 @@ if __name__ == "__main__":
 	import jsonrpc_setworkaux
 	
 	server = JSONRPCServer()
+	server.tls = threading.local()
+	server.tls.wantClear = False
 	if hasattr(config, 'JSONRPCAddress'):
 		logging.getLogger('backwardCompatibility').warn('JSONRPCAddress configuration variable is deprecated; upgrade to JSONRPCAddresses list before 2013-03-05')
 		if not hasattr(config, 'JSONRPCAddresses'):
