@@ -331,6 +331,8 @@ def checkShare(share):
 	(wld, issueT) = MWL[wli]
 	share[mode] = wld
 	
+	share['issuetime'] = issueT
+	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
 	DupeShareHACK[data] = None
