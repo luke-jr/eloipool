@@ -213,7 +213,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self.WakeRequest = None
 		C = self._Clients
 		if not C:
-			self.logger.info('Nobody to wake up')
+			self.logger.debug('Nobody to wake up')
 			return
 		OC = len(C)
 		self.logger.debug("%d clients to wake up..." % (OC,))
@@ -230,4 +230,4 @@ class StratumServer(networkserver.AsyncSocketServer):
 				OC -= 1
 				self.logger.debug('Error sending new job:\n' + traceback.format_exc())
 		
-		self.logger.info('New job sent to %d clients in %.3f seconds' % (OC, time() - now))
+		self.logger.debug('New job sent to %d clients in %.3f seconds' % (OC, time() - now))
