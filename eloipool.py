@@ -156,7 +156,7 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, dblsha, hash2int, swap32, target2pdiff
+from util import RejectedShare, bdiff1target, dblsha, hash2int, swap32, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
@@ -178,7 +178,8 @@ def submitGotwork(info):
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
 def getTarget(username, now):
-	if not config.DynamicTargetting:
+	DTMode = config.DynamicTargetting
+	if not DTMode:
 		return None
 	if username in userStatus:
 		status = userStatus[username]
@@ -203,9 +204,12 @@ def getTarget(username, now):
 	else:
 		if target < networkTarget:
 			target = networkTarget
-		if config.DynamicTargetting == 2:
+		if DTMode == 2:
 			# Round target to a power of two :)
 			target = 2**int(log(target, 2) + 1) - 1
+		elif DTMode == 3:
+			# Round target to multiple of bdiff 1
+			target = bdiff1target / int(round(target2bdiff(target)))
 		if target == config.ShareTarget:
 			target = None
 	if target != targetIn:
