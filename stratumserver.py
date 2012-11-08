@@ -156,8 +156,15 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self._JobId = 0
 		self.JobId = '%d' % (time(),)
 		self.WakeRequest = None
+		self.UpdateTask = None
 	
 	def updateJob(self, wantClear = False):
+		if self.UpdateTask:
+			try:
+				self.rmSchedule(self.UpdateTask)
+			except:
+				pass
+		
 		self._JobId += 1
 		JobId = '%d %d' % (time(), self._JobId)
 		(MC, wld) = self.getStratumJob(JobId, wantClear=wantClear)
@@ -195,6 +202,8 @@ class StratumServer(networkserver.AsyncSocketServer):
 		
 		self.WakeRequest = 1
 		self.wakeup()
+		
+		self.UpdateTask = self.schedule(self.updateJob, time() + 30)
 	
 	def pre_schedule(self):
 		if self.WakeRequest:
