@@ -35,6 +35,11 @@ def target2pdiff(target):
 		pdiff = pdiff_int
 	return pdiff
 
+bdiff1target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+
+def target2bdiff(target):
+	return bdiff1target / target
+
 class shareLogFormatter:
 	_re_x = re.compile(r'^\s*(\w+)\s*(?:\(\s*(.*?)\s*\))?\s*$')
 	
@@ -100,6 +105,10 @@ class shareLogFormatter:
 	@classmethod
 	def get_field_YN(self, subfunc):
 		return lambda s: YN(subfunc(s))
+	
+	@classmethod
+	def get_field_target2bdiff(self, subfunc):
+		return lambda s: target2bdiff(subfunc(s))
 	
 	@classmethod
 	def get_field_target2pdiff(self, subfunc):
