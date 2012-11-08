@@ -176,8 +176,13 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 		self.LPUntrack()
 		
 		self.server.tls.wantClear = wantClear
-		rv = self._doJSON_i(*self._LPCall, longpoll=True)
-		self.server.tls.wantClear = False
+		try:
+			rv = self._doJSON_i(*self._LPCall, longpoll=True)
+		except WithinLongpoll:
+			# Not sure why this would happen right now, but handle it sanely...
+			return
+		finally:
+			self.server.tls.wantClear = False
 		if 'NELH' not in self.quirks:
 			rv = rv[1:]  # strip the '{' we already sent
 			self.push(('%x' % len(rv)).encode('utf8') + b"\r\n" + rv + b"\r\n0\r\n\r\n")
