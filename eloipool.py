@@ -177,41 +177,54 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-def getTarget(username, now):
-	DTMode = config.DynamicTargetting
+def clampTarget(target, DTMode):
+	# ShareTarget is the minimum
+	if target is None or target > config.ShareTarget:
+		target = config.ShareTarget
+	
+	# Never target above the network, as we'd lose blocks
+	if target < networkTarget:
+		target = networkTarget
+	
+	if DTMode == 2:
+		# Ceil target to a power of two :)
+		target = 2**int(log(target, 2) + 1) - 1
+	elif DTMode == 3:
+		# Round target to multiple of bdiff 1
+		target = bdiff1target / int(round(target2bdiff(target)))
+	
+	# Return None for ShareTarget to save memory
+	if target == config.ShareTarget:
+		return None
+	return target
+
+def getTarget(username, now, DTMode = None):
+	if DTMode is None:
+		DTMode = config.DynamicTargetting
 	if not DTMode:
 		return None
 	if username in userStatus:
 		status = userStatus[username]
 	else:
+		# No record, use default target
 		userStatus[username] = [None, now, 0]
-		return None
+		return clampTarget(None, DTMode)
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
 		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
-			return targetIn
+			# No reason to change it just yet
+			return clampTarget(targetIn, DTMode)
 		if not work:
+			# No shares received, reset to minimum
 			if targetIn:
 				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
 				userStatus[username] = [None, now, 0]
-			return None
+			return clampTarget(None, DTMode)
 	
 	deltaSec = now - lastUpdate
 	target = targetIn or config.ShareTarget
 	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
-	if target >= config.ShareTarget:
-		target = None
-	else:
-		if target < networkTarget:
-			target = networkTarget
-		if DTMode == 2:
-			# Round target to a power of two :)
-			target = 2**int(log(target, 2) + 1) - 1
-		elif DTMode == 3:
-			# Round target to multiple of bdiff 1
-			target = bdiff1target / int(round(target2bdiff(target)))
-		if target == config.ShareTarget:
-			target = None
+	target = clampTarget(target, DTMode)
 	if target != targetIn:
 		pfx = 'Retargetting %s' % (repr(username),)
 		tin = targetIn or config.ShareTarget
