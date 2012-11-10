@@ -163,6 +163,11 @@ class StratumHandler(networkserver.SocketHandler):
 		if valid:
 			self.Usernames[username] = None
 		return valid
+	
+	def _stratum_mining_get_transactions(self, jobid):
+		(MC, wld) = self.server.getExistingStratumJob(jobid)
+		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
+		return list(b2a_hex(txn.data).decode('ascii') for txn in merkleTree.data[1:])
 
 class StratumServer(networkserver.AsyncSocketServer):
 	logger = logging.getLogger('StratumServer')

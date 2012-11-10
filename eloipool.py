@@ -273,6 +273,10 @@ def getStratumJob(jobid, wantClear = False):
 	workLog.setdefault(None, {})[jobid] = (MC, now)
 	return (MC, workLog[None][jobid])
 
+def getExistingStratumJob(jobid):
+	wld = workLog[None][jobid]
+	return (wld[0], wld)
+
 loggersShare = []
 
 RBDs = []
@@ -772,6 +776,7 @@ if __name__ == "__main__":
 	
 	stratumsrv = StratumServer()
 	stratumsrv.getStratumJob = getStratumJob
+	stratumsrv.getExistingStratumJob = getExistingStratumJob
 	stratumsrv.receiveShare = receiveShare
 	stratumsrv.getTarget = getTarget
 	stratumsrv.defaultTarget = config.ShareTarget
