@@ -31,7 +31,7 @@ if len(logging.root.handlers) == 0:
 		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
 		level=logging.DEBUG,
 	)
-	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
+	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer'):
 		logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
@@ -95,8 +95,10 @@ networkTarget = None
 DupeShareHACK = {}
 
 server = None
+stratumsrv = None
 def updateBlocks():
 	server.wakeLongpoll()
+	stratumsrv.updateJob()
 
 def blockChanged():
 	global DupeShareHACK
@@ -110,6 +112,7 @@ def blockChanged():
 		networkTarget = Bits2Target(bits)
 	workLog.clear()
 	server.wakeLongpoll(wantClear=True)
+	stratumsrv.updateJob(wantClear=True)
 
 
 from time import sleep, time
@@ -153,7 +156,7 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, dblsha, hash2int, swap32, target2pdiff
+from util import RejectedShare, bdiff1target, dblsha, hash2int, swap32, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
@@ -174,37 +177,54 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-def getTarget(username, now):
-	if not config.DynamicTargetting:
+def clampTarget(target, DTMode):
+	# ShareTarget is the minimum
+	if target is None or target > config.ShareTarget:
+		target = config.ShareTarget
+	
+	# Never target above the network, as we'd lose blocks
+	if target < networkTarget:
+		target = networkTarget
+	
+	if DTMode == 2:
+		# Ceil target to a power of two :)
+		target = 2**int(log(target, 2) + 1) - 1
+	elif DTMode == 3:
+		# Round target to multiple of bdiff 1
+		target = bdiff1target / int(round(target2bdiff(target)))
+	
+	# Return None for ShareTarget to save memory
+	if target == config.ShareTarget:
+		return None
+	return target
+
+def getTarget(username, now, DTMode = None):
+	if DTMode is None:
+		DTMode = config.DynamicTargetting
+	if not DTMode:
 		return None
 	if username in userStatus:
 		status = userStatus[username]
 	else:
+		# No record, use default target
 		userStatus[username] = [None, now, 0]
-		return None
+		return clampTarget(None, DTMode)
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
 		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
-			return targetIn
+			# No reason to change it just yet
+			return clampTarget(targetIn, DTMode)
 		if not work:
+			# No shares received, reset to minimum
 			if targetIn:
 				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
 				userStatus[username] = [None, now, 0]
-			return None
+			return clampTarget(None, DTMode)
 	
 	deltaSec = now - lastUpdate
 	target = targetIn or config.ShareTarget
 	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
-	if target >= config.ShareTarget:
-		target = None
-	else:
-		if target < networkTarget:
-			target = networkTarget
-		if config.DynamicTargetting == 2:
-			# Round target to a power of two :)
-			target = 2**int(log(target, 2) + 1) - 1
-		if target == config.ShareTarget:
-			target = None
+	target = clampTarget(target, DTMode)
 	if target != targetIn:
 		pfx = 'Retargetting %s' % (repr(username),)
 		tin = targetIn or config.ShareTarget
@@ -245,6 +265,17 @@ def getBlockTemplate(username, p_magic = None):
 	wli = coinbase[wliPos:wliPos+wliLen]
 	target = RegisterWork(username, wli, MC)
 	return (MC, workLog[username][wli], target)
+
+def getStratumJob(jobid, wantClear = False):
+	MC = MM.getMC(wantClear)
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
+	now = time()
+	workLog.setdefault(None, {})[jobid] = (MC, now)
+	return (MC, workLog[None][jobid])
+
+def getExistingStratumJob(jobid):
+	wld = workLog[None][jobid]
+	return (wld[0], wld)
 
 loggersShare = []
 
@@ -289,9 +320,7 @@ def blockSubmissionThread(payload, blkhash, share):
 		RBFs.append( (('upstream reject', rv, time()), payload, blkhash, share) )
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
 
-def checkShare(share):
-	shareTime = share['time'] = time()
-	
+def checkData(share):
 	data = share['data']
 	data = data[:80]
 	(prevBlock, height, bits) = MM.currentBlock
@@ -301,11 +330,6 @@ def checkShare(share):
 			raise RejectedShare('stale-prevblk')
 		raise RejectedShare('bad-prevblk')
 	
-	# TODO: use userid
-	username = share['username']
-	if username not in workLog:
-		raise RejectedShare('unknown-user')
-	
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
 	
@@ -313,32 +337,74 @@ def checkShare(share):
 	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
 	if data[1:4] != b'\0\0\0' or data[0] > 2:
 		raise RejectedShare('bad-version')
+
+def buildStratumData(share, merkleroot):
+	(prevBlock, height, bits) = MM.currentBlock
 	
-	shareMerkleRoot = data[36:68]
-	if 'blkdata' in share:
-		pl = share['blkdata']
-		(txncount, pl) = varlenDecode(pl)
-		cbtxn = bitcoin.txn.Txn(pl)
-		othertxndata = cbtxn.disassemble(retExtra=True)
-		coinbase = cbtxn.getCoinbase()
-		wliPos = coinbase[0] + 2
-		wliLen = coinbase[wliPos - 1]
-		wli = coinbase[wliPos:wliPos+wliLen]
+	data = b'\x02\0\0\0'
+	data += prevBlock
+	data += merkleroot
+	data += share['ntime'][::-1]
+	data += bits
+	data += share['nonce'][::-1]
+	
+	share['data'] = data
+	return data
+
+def checkShare(share):
+	shareTime = share['time'] = time()
+	
+	username = share['username']
+	if 'data' in share:
+		# getwork/GBT
+		checkData(share)
+		data = share['data']
+		
+		if username not in workLog:
+			raise RejectedShare('unknown-user')
+		MWL = workLog[username]
+		
+		shareMerkleRoot = data[36:68]
+		if 'blkdata' in share:
+			pl = share['blkdata']
+			(txncount, pl) = varlenDecode(pl)
+			cbtxn = bitcoin.txn.Txn(pl)
+			othertxndata = cbtxn.disassemble(retExtra=True)
+			coinbase = cbtxn.getCoinbase()
+			wliPos = coinbase[0] + 2
+			wliLen = coinbase[wliPos - 1]
+			wli = coinbase[wliPos:wliPos+wliLen]
+			mode = 'MC'
+			moden = 1
+		else:
+			wli = shareMerkleRoot
+			mode = 'MRD'
+			moden = 0
+			coinbase = None
+	else:
+		# Stratum
+		MWL = workLog[None]
+		wli = share['jobid']
+		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
 		moden = 1
-	else:
-		wli = shareMerkleRoot
-		mode = 'MRD'
-		moden = 0
-		coinbase = None
+		othertxndata = b''
 	
-	MWL = workLog[username]
 	if wli not in MWL:
 		raise RejectedShare('unknown-work')
 	(wld, issueT) = MWL[wli]
 	share[mode] = wld
 	
 	share['issuetime'] = issueT
+	
+	(workMerkleTree, workCoinbase) = wld[1:3]
+	if 'jobid' in share:
+		cbtxn = deepcopy(workMerkleTree.data[0])
+		coinbase = workCoinbase + share['extranonce1'] + share['extranonce2']
+		cbtxn.setCoinbase(coinbase)
+		cbtxn.assemble()
+		data = buildStratumData(share, workMerkleTree.withFirst(cbtxn))
+		shareMerkleRoot = data[36:68]
 	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
@@ -353,10 +419,6 @@ def checkShare(share):
 	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
-	
-	workMerkleTree = wld[1]
-	workCoinbase = wld[2]
-	workTarget = wld[6] if len(wld) > 6 else None
 	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
@@ -402,6 +464,13 @@ def checkShare(share):
 			thr.start()
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
+	
+	if 'target' in share:
+		workTarget = share['target']
+	elif len(wld) > 6:
+		workTarget = wld[6]
+	else:
+		workTarget = None
 	
 	if workTarget is None:
 		workTarget = config.ShareTarget
@@ -463,7 +532,7 @@ def receiveShare(share):
 		else:
 			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
 		for i in loggersShare:
-			i(share)
+			i.logShare(share)
 
 def newBlockNotification():
 	logging.getLogger('newBlockNotification').info('Received new block notification')
@@ -501,7 +570,7 @@ def stopServers():
 	
 	logger.info('Stopping servers...')
 	global bcnode, server
-	servers = (bcnode, server)
+	servers = (bcnode, server, stratumsrv)
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
@@ -526,6 +595,11 @@ def stopServers():
 	for s in servers:
 		for fd in s._fd.keys():
 			os.close(fd)
+
+def stopLoggers():
+	for i in loggersShare:
+		if hasattr(i, 'stop'):
+			i.stop()
 
 def saveState(t = None):
 	logger = logging.getLogger('saveState')
@@ -552,6 +626,7 @@ def saveState(t = None):
 def exit():
 	t = time()
 	stopServers()
+	stopLoggers()
 	saveState(t)
 	logging.getLogger('exit').info('Goodbye...')
 	os.kill(os.getpid(), signal.SIGTERM)
@@ -560,6 +635,7 @@ def exit():
 def restart():
 	t = time()
 	stopServers()
+	stopLoggers()
 	saveState(t)
 	logging.getLogger('restart').info('Restarting...')
 	try:
@@ -615,6 +691,7 @@ import interactivemode
 from networkserver import NetworkListener
 import threading
 import sharelogging
+from stratumserver import StratumServer
 import imp
 
 if __name__ == "__main__":
@@ -656,7 +733,7 @@ if __name__ == "__main__":
 			fp, pathname, description = imp.find_module(name, sharelogging.__path__)
 			m = imp.load_module(name, fp, pathname, description)
 			lo = getattr(m, name)(**parameters)
-			loggersShare.append(lo.logShare)
+			loggersShare.append(lo)
 		except:
 			logging.getLogger('sharelogging').error("Error setting up share logger %s: %s", name,  sys.exc_info())
 
@@ -697,6 +774,17 @@ if __name__ == "__main__":
 		server.TrustedForwarders = config.TrustedForwarders
 	server.ServerName = config.ServerName
 	
+	stratumsrv = StratumServer()
+	stratumsrv.getStratumJob = getStratumJob
+	stratumsrv.getExistingStratumJob = getExistingStratumJob
+	stratumsrv.receiveShare = receiveShare
+	stratumsrv.getTarget = getTarget
+	stratumsrv.defaultTarget = config.ShareTarget
+	if not hasattr(config, 'StratumAddresses'):
+		config.StratumAddresses = ()
+	for a in config.StratumAddresses:
+		NetworkListener(stratumsrv, a)
+	
 	MM.start()
 	
 	restoreState()
@@ -708,5 +796,9 @@ if __name__ == "__main__":
 	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
 	bcnode_thr.daemon = True
 	bcnode_thr.start()
+	
+	stratum_thr = threading.Thread(target=stratumsrv.serve_forever)
+	stratum_thr.daemon = True
+	stratum_thr.start()
 	
 	server.serve_forever()

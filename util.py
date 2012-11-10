@@ -26,14 +26,23 @@ def YN(b):
 		return None
 	return 'Y' if b else 'N'
 
+def _maybe_int(n):
+	n_int = int(n)
+	if n == n_int:
+		return n_int
+	return n
+
 def target2pdiff(target):
 	if target is None:
 		return None
 	pdiff = round(2**(224 - log(target, 2)), 8)
-	pdiff_int = int(pdiff)
-	if pdiff == pdiff_int:
-		pdiff = pdiff_int
-	return pdiff
+	return _maybe_int(pdiff)
+
+bdiff1target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+
+def target2bdiff(target):
+	bdiff = bdiff1target / target
+	return _maybe_int(bdiff)
 
 class shareLogFormatter:
 	_re_x = re.compile(r'^\s*(\w+)\s*(?:\(\s*(.*?)\s*\))?\s*$')
@@ -100,6 +109,10 @@ class shareLogFormatter:
 	@classmethod
 	def get_field_YN(self, subfunc):
 		return lambda s: YN(subfunc(s))
+	
+	@classmethod
+	def get_field_target2bdiff(self, subfunc):
+		return lambda s: target2bdiff(subfunc(s))
 	
 	@classmethod
 	def get_field_target2pdiff(self, subfunc):

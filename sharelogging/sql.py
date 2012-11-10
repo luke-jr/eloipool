@@ -15,6 +15,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+from queue import Queue
+import threading
 from util import shareLogFormatter
 
 _logger = logging.getLogger('sharelogging.sql')
@@ -31,7 +33,35 @@ class sql:
 		dbe = ka['engine']
 		if 'statement' not in ka:
 			_logger.warn('"statement" not specified for sql logger, but default may vary!')
+		self.threadsafe = False
 		getattr(self, 'setup_%s' % (dbe,))()
+		if self.threadsafe:
+			self._logShareF = self._doInsert
+			self.stop = self._shutdown
+			self._connect()
+		else:
+			self._queue = Queue()
+			self._logShareF = self._queue.put
+			threading.Thread(target=self._thread).start()
+	
+	def _doInsert(self, o):
+		(stmt, params) = o
+		dbc = self.db.cursor()
+		dbc.execute(stmt, params)
+		self.db.commit()
+	
+	def _thread(self):
+		self._connect()
+		while True:
+			try:
+				o = self._queue.get()
+				if o is None:
+					# Shutdown logger
+					break
+				self._doInsert(o)
+			except:
+				_logger.critical(traceback.format_exc())
+		self._shutdown()
 	
 	def setup_mysql(self):
 		import pymysql
@@ -39,28 +69,34 @@ class sql:
 		if 'passwd' not in dbopts and 'password' in dbopts:
 			dbopts['passwd'] = dbopts['password']
 			del dbopts['password']
-		self.db = pymysql.connect(**dbopts)
 		self.modsetup(pymysql)
 	
 	def setup_postgres(self):
 		import psycopg2
-		self.db = psycopg2.connect(**self.opts.get('dbopts', {}))
 		self.opts.setdefault('statement', "insert into shares (rem_host, username, our_result, upstream_result, reason, solution) values ({Q(remoteHost)}, {username}, {YN(not(rejectReason))}, {YN(upstreamResult)}, {rejectReason}, decode({solution}, 'hex'))")
 		self.modsetup(psycopg2)
 	
 	def setup_sqlite(self):
 		import sqlite3
-		self.db = sqlite3.connect(**self.opts.get('dbopts', {}))
 		self.modsetup(sqlite3)
 	
 	def modsetup(self, mod):
+		self._mod = mod
 		psf = self._psf[mod.paramstyle]
 		self.opts.setdefault('statement', "insert into shares (remoteHost, username, rejectReason, upstreamResult, solution) values ({remoteHost}, {username}, {rejectReason}, {upstreamResult}, {solution})")
 		stmt = self.opts['statement']
 		self.pstmt = shareLogFormatter(stmt, psf)
 	
+	def _connect(self):
+		self.db = self._mod.connect(**self.opts.get('dbopts', {}))
+	
 	def logShare(self, share):
-		(stmt, params) = self.pstmt.applyToShare(share)
-		dbc = self.db.cursor()
-		dbc.execute(stmt, params)
-		self.db.commit()
+		o = self.pstmt.applyToShare(share)
+		self._logShareF(o)
+	
+	def stop(self):
+		# NOTE: this is replaced with _shutdown directly for threadsafe objects
+		self._queue.put(None)
+	
+	def _shutdown(self):
+		pass # TODO
