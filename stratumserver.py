@@ -132,7 +132,7 @@ class StratumHandler(networkserver.SocketHandler):
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
 		if username not in self.Usernames:
-			pass # TODO
+			raise StratumError(24, 'unauthorized-user')
 		share = {
 			'username': username,
 			'remoteHost': self.remoteHost,
