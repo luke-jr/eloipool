@@ -20,10 +20,10 @@ from copy import deepcopy
 import json
 import logging
 import networkserver
-#import re
+import socket
 import struct
 from time import time
-#import traceback
+import traceback
 from util import RejectedShare, swap32, target2bdiff
 
 class StratumError(BaseException):
@@ -90,7 +90,7 @@ class StratumHandler(networkserver.SocketHandler):
 	def sendJob(self):
 		target = self.server.defaultTarget
 		if len(self.Usernames) == 1:
-			dtarget = self.server.getTarget(self.Usernames[0], time(), 3)
+			dtarget = self.server.getTarget(next(iter(self.Usernames)), time(), 3)
 			if not target is None:
 				target = dtarget
 		bdiff = target2bdiff(target)
