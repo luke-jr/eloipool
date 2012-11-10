@@ -27,9 +27,10 @@ import traceback
 from util import RejectedShare, swap32, target2bdiff
 
 class StratumError(BaseException):
-	def __init__(self, errno, msg):
+	def __init__(self, errno, msg, tb = True):
 		self.StratumErrNo = errno
 		self.StratumErrMsg = msg
+		self.StratumTB = tb
 
 StratumCodes = {
 	'stale-prevblk': 21,
@@ -75,10 +76,20 @@ class StratumHandler(networkserver.SocketHandler):
 			rv = getattr(self, funcname)(*rpc['params'])
 		except StratumError as e:
 			self.sendReply({
-				'error': (e.StratumErrNo, e.StratumErrMsg, None),
+				'error': (e.StratumErrNo, e.StratumErrMsg, traceback.format_exc() if e.StratumTB else None),
 				'id': rpc['id'],
 				'result': None,
 			})
+			return
+		except BaseException as e:
+			fexc = traceback.format_exc()
+			self.sendReply({
+				'error': (20, str(e), fexc),
+				'id': rpc['id'],
+				'result': None,
+			})
+			if not hasattr(e, 'StratumQuiet'):
+				self.logger.debug(fexc)
 			return
 		
 		self.sendReply({
@@ -132,7 +143,7 @@ class StratumHandler(networkserver.SocketHandler):
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
 		if username not in self.Usernames:
-			raise StratumError(24, 'unauthorized-user')
+			raise StratumError(24, 'unauthorized-user', False)
 		share = {
 			'username': username,
 			'remoteHost': self.remoteHost,
@@ -149,7 +160,7 @@ class StratumHandler(networkserver.SocketHandler):
 		except RejectedShare as rej:
 			rej = str(rej)
 			errno = StratumCodes.get(rej, 20)
-			raise StratumError(errno, rej)
+			raise StratumError(errno, rej, False)
 		return True
 	
 	def checkAuthentication(self, username, password):
@@ -165,7 +176,11 @@ class StratumHandler(networkserver.SocketHandler):
 		return valid
 	
 	def _stratum_mining_get_transactions(self, jobid):
-		(MC, wld) = self.server.getExistingStratumJob(jobid)
+		try:
+			(MC, wld) = self.server.getExistingStratumJob(jobid)
+		except KeyError as e:
+			e.StratumQuiet = True
+			raise
 		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
 		return list(b2a_hex(txn.data).decode('ascii') for txn in merkleTree.data[1:])
 
