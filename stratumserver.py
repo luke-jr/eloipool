@@ -90,7 +90,7 @@ class StratumHandler(networkserver.SocketHandler):
 	def sendJob(self):
 		target = self.server.defaultTarget
 		if len(self.Usernames) == 1:
-			dtarget = self.server.getTarget(next(iter(self.Usernames)), time(), 3)
+			dtarget = self.server.getTarget(next(iter(self.Usernames)), time())
 			if not target is None:
 				target = dtarget
 		bdiff = target2bdiff(target)
