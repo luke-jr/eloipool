@@ -31,7 +31,7 @@ if len(logging.root.handlers) == 0:
 		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
 		level=logging.DEBUG,
 	)
-	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer'):
+	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer', 'WorkLogPruner'):
 		logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
