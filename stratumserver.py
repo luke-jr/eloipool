@@ -91,7 +91,7 @@ class StratumHandler(networkserver.SocketHandler):
 		target = self.server.defaultTarget
 		if len(self.Usernames) == 1:
 			dtarget = self.server.getTarget(next(iter(self.Usernames)), time())
-			if not target is None:
+			if not dtarget is None:
 				target = dtarget
 		bdiff = target2bdiff(target)
 		if self.lastBDiff != bdiff:
