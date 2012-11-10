@@ -254,6 +254,7 @@ class HTTPHandler(networkserver.SocketHandler):
 	
 	def reset_request(self):
 		self.replySent = False
+		self.incoming = []
 		self.set_terminator( (b"\n\n", b"\r\n\r\n") )
 		self.reading_headers = True
 		self.changeTask(self.handle_timeout, time() + 150)
