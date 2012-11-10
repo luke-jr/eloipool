@@ -416,8 +416,6 @@ def checkShare(share):
 	logfunc('BLKHASH: %64x' % (blkhashn,))
 	logfunc(' TARGET: %64x' % (networkTarget,))
 	
-	workTarget = wld[6] if len(wld) > 6 else None
-	
 	# NOTE: this isn't actually needed for MC mode, but we're abusing it for a trivial share check...
 	txlist = workMerkleTree.data
 	txlist = [deepcopy(txlist[0]),] + txlist[1:]
@@ -462,6 +460,13 @@ def checkShare(share):
 			thr.start()
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
+	
+	if 'target' in share:
+		workTarget = share['target']
+	elif len(wld) > 6:
+		workTarget = wld[6]
+	else:
+		workTarget = None
 	
 	if workTarget is None:
 		workTarget = config.ShareTarget
@@ -768,6 +773,8 @@ if __name__ == "__main__":
 	stratumsrv = StratumServer()
 	stratumsrv.getStratumJob = getStratumJob
 	stratumsrv.receiveShare = receiveShare
+	stratumsrv.getTarget = getTarget
+	stratumsrv.defaultTarget = config.ShareTarget
 	if not hasattr(config, 'StratumAddresses'):
 		config.StratumAddresses = ()
 	for a in config.StratumAddresses:

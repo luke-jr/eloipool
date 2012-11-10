@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from binascii import b2a_hex
+import collections
 from copy import deepcopy
 import json
 import logging
@@ -23,7 +24,7 @@ import networkserver
 import struct
 from time import time
 #import traceback
-from util import RejectedShare, swap32
+from util import RejectedShare, swap32, target2bdiff
 
 class StratumError(BaseException):
 	def __init__(self, errno, msg):
@@ -47,6 +48,8 @@ class StratumHandler(networkserver.SocketHandler):
 		self.changeTask(None)
 		self.set_terminator(b"\n")
 		self.Usernames = {}
+		self.lastBDiff = None
+		self.JobTargets = collections.OrderedDict()
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
@@ -85,7 +88,25 @@ class StratumHandler(networkserver.SocketHandler):
 		})
 	
 	def sendJob(self):
+		target = self.server.defaultTarget
+		if len(self.Usernames) == 1:
+			dtarget = self.server.getTarget(self.Usernames[0], time(), 3)
+			if not target is None:
+				target = dtarget
+		bdiff = target2bdiff(target)
+		if self.lastBDiff != bdiff:
+			self.sendReply({
+				'id': None,
+				'method': 'mining.set_difficulty',
+				'params': [
+					bdiff
+				],
+			})
+			self.lastBDiff = bdiff
 		self.push(self.server.JobBytes)
+		if len(self.JobTargets) > 4:
+			self.JobTargets.popitem(False)
+		self.JobTargets[self.server.JobId] = target
 	
 	def _stratum_mining_subscribe(self):
 		xid = struct.pack('@P', id(self))
@@ -121,6 +142,8 @@ class StratumHandler(networkserver.SocketHandler):
 			'ntime': bytes.fromhex(ntime),
 			'nonce': bytes.fromhex(nonce),
 		}
+		if jobid in self.JobTargets:
+			share['target'] = self.JobTargets[jobid]
 		try:
 			self.server.receiveShare(share)
 		except RejectedShare as rej:
@@ -231,3 +254,6 @@ class StratumServer(networkserver.AsyncSocketServer):
 				self.logger.debug('Error sending new job:\n' + traceback.format_exc())
 		
 		self.logger.debug('New job sent to %d clients in %.3f seconds' % (OC, time() - now))
+	
+	def getTarget(*a, **ka):
+		return None
