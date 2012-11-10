@@ -33,6 +33,10 @@ class SocketHandler:
 	def handle_close(self):
 		self.changeTask(None)
 		self.wbuf = None
+		try:
+			del self.server.connections[id(self)]
+		except:
+			pass
 		self.close()
 	
 	def handle_error(self):
@@ -166,6 +170,9 @@ class SocketHandler:
 		self.socket.close()
 		self.fd = -1
 	
+	def boot(self):
+		self.close()
+	
 	def changeTask(self, f, t = None):
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
 		if f:
@@ -182,6 +189,7 @@ class SocketHandler:
 		self._Task = None
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
+		server.connections[id(self)] = self
 		self.changeTask(self.handle_timeout, time() + 15)
 	
 	@classmethod
@@ -246,6 +254,9 @@ class NetworkListener:
 	def handle_read(self):
 		server = self.server
 		conn, addr = self.socket.accept()
+		if server.rejecting:
+			conn.close()
+			return
 		conn.setblocking(False)
 		h = server.RequestHandlerClass(server, conn, addr)
 	
@@ -278,9 +289,11 @@ class AsyncSocketServer:
 		
 		self.running = False
 		self.keepgoing = True
+		self.rejecting = False
 		
 		self._epoll = select.epoll()
 		self._fd = {}
+		self.connections = {}
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
@@ -332,6 +345,10 @@ class AsyncSocketServer:
 	
 	def final_init(self):
 		pass
+	
+	def boot_all(self):
+		for c in self.connections.values():
+			tryErr(lambda: c.boot())
 	
 	def serve_forever(self):
 		self.running = True

@@ -199,9 +199,15 @@ class StratumServer(networkserver.AsyncSocketServer):
 		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
 		
 		if len(cb) > 96 - len(self.extranonce1null) - 4:
-			self.logger.warning('Coinbase too big for Stratum: GIVING CLIENTS INVALID JOBS')
-			# TODO: shutdown stratum
-			# TODO: restart automatically when coinbase works?
+			if not self.rejecting:
+				self.logger.warning('Coinbase too big for stratum: disabling')
+			self.rejecting = True
+			self.boot_all()
+			self.UpdateTask = self.schedule(self.updateJob, time() + 10)
+			return
+		elif self.rejecting:
+			self.rejecting = False
+			self.logger.info('Coinbase small enough for stratum again: reenabling')
 		
 		txn = deepcopy(merkleTree.data[0])
 		cb += self.extranonce1null + b'Eloi'
