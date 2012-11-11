@@ -33,10 +33,6 @@ class SocketHandler:
 	def handle_close(self):
 		self.changeTask(None)
 		self.wbuf = None
-		try:
-			del self.server.connections[id(self)]
-		except:
-			pass
 		self.close()
 	
 	def handle_error(self):
@@ -166,6 +162,10 @@ class SocketHandler:
 		if self.fd == -1:
 			# Already closed
 			return
+		try:
+			del self.server.connections[id(self)]
+		except:
+			pass
 		self.server.unregister_socket(self.fd)
 		self.socket.close()
 		self.fd = -1
