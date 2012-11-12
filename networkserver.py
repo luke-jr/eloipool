@@ -31,7 +31,6 @@ class SocketHandler:
 	ac_out_buffer_size = 4096
 	
 	def handle_close(self):
-		self.changeTask(None)
 		self.wbuf = None
 		self.close()
 	
@@ -167,6 +166,7 @@ class SocketHandler:
 		except:
 			pass
 		self.server.unregister_socket(self.fd)
+		self.changeTask(None)
 		self.socket.close()
 		self.fd = -1
 	
@@ -177,6 +177,8 @@ class SocketHandler:
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
 		if f:
 			self._Task = self.server.schedule(f, t, errHandler=self)
+		else:
+			self._Task = None
 	
 	def __init__(self, server, sock, addr):
 		self.ac_in_buffer = b''
