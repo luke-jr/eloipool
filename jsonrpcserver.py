@@ -261,7 +261,6 @@ class JSONRPCHandler:
 	
 	def handle_close(self):
 		self.cleanupLP()
-		self.changeTask(None)
 		self.wbuf = None
 		self.close()
 	
@@ -458,6 +457,7 @@ class JSONRPCHandler:
 			self.closeme = True
 			return
 		self.server.unregister_socket(self.fd)
+		self.changeTask(None)
 		self.socket.close()
 	
 	def changeTask(self, f, t = None):
