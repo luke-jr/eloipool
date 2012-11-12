@@ -464,6 +464,8 @@ class JSONRPCHandler:
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
 		if f:
 			self._Task = self.server.schedule(f, t, errHandler=self)
+		else:
+			self._Task = None
 	
 	def __init__(self, server, sock, addr):
 		self.ac_in_buffer = b''
