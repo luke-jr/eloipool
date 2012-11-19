@@ -198,3 +198,10 @@ class ScheduleDict:
 	
 	def __len__(self):
 		return len(self._dict)
+
+class WithNoop:
+	def __enter__(self):
+		pass
+	def __exit__(self, *a):
+		pass
+WithNoop = WithNoop()

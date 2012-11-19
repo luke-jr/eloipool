@@ -19,9 +19,10 @@ import logging
 import os
 import select
 import socket
+import threading
 from time import time
 import traceback
-from util import ScheduleDict, tryErr
+from util import ScheduleDict, WithNoop, tryErr
 
 EPOLL_READ = select.EPOLLIN | select.EPOLLPRI | select.EPOLLERR | select.EPOLLHUP
 EPOLL_WRITE = select.EPOLLOUT
@@ -282,6 +283,7 @@ class AsyncSocketServer:
 	logger = logging.getLogger('SocketServer')
 	
 	waker = False
+	schMT = False
 	
 	def __init__(self, RequestHandlerClass):
 		if not hasattr(self, 'ServerName'):
@@ -299,6 +301,10 @@ class AsyncSocketServer:
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
+		if self.schMT:
+			self._schLock = threading.Lock()
+		else:
+			self._schLock = WithNoop
 		
 		self.TrustedForwarders = ()
 		
@@ -326,16 +332,18 @@ class AsyncSocketServer:
 			raise socket.error
 	
 	def schedule(self, task, startTime, errHandler=None):
-		self._sch[task] = startTime
-		if errHandler:
-			self._schEH[id(task)] = errHandler
+		with self._schLock:
+			self._sch[task] = startTime
+			if errHandler:
+				self._schEH[id(task)] = errHandler
 		return task
 	
 	def rmSchedule(self, task):
-		del self._sch[task]
-		k = id(task)
-		if k in self._schEH:
-			del self._schEH[k]
+		with self._schLock:
+			del self._sch[task]
+			k = id(task)
+			if k in self._schEH:
+				del self._schEH[k]
 	
 	def pre_schedule(self):
 		pass
@@ -360,28 +368,29 @@ class AsyncSocketServer:
 			self.pre_schedule()
 			self.doing = 'schedule'
 			if len(self._sch):
-				timeNow = time()
-				while True:
-					timeNext = self._sch.nextTime()
-					if timeNow < timeNext:
-						timeout = timeNext - timeNow
-						break
-					f = self._sch.shift()
-					k = id(f)
-					EH = None
-					if k in self._schEH:
-						EH = self._schEH[k]
-						del self._schEH[k]
-					try:
-						f()
-					except socket.error:
-						if EH: tryErr(EH.handle_error)
-					except:
-						self.logger.error(traceback.format_exc())
-						if EH: tryErr(EH.handle_close)
-					if not len(self._sch):
-						timeout = -1
-						break
+				with self._schLock:
+					timeNow = time()
+					while True:
+						timeNext = self._sch.nextTime()
+						if timeNow < timeNext:
+							timeout = timeNext - timeNow
+							break
+						f = self._sch.shift()
+						k = id(f)
+						EH = None
+						if k in self._schEH:
+							EH = self._schEH[k]
+							del self._schEH[k]
+						try:
+							f()
+						except socket.error:
+							if EH: tryErr(EH.handle_error)
+						except:
+							self.logger.error(traceback.format_exc())
+							if EH: tryErr(EH.handle_close)
+						if not len(self._sch):
+							timeout = -1
+							break
 			else:
 				timeout = -1
 			

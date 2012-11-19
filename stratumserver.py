@@ -188,6 +188,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 	logger = logging.getLogger('StratumServer')
 	
 	waker = True
+	schMT = True
 	
 	extranonce1null = struct.pack('@P', 0)
 	
