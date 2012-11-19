@@ -67,7 +67,7 @@ class _getwork:
 		rv['target'] = ShareTargetHexLE
 		
 		if x:
-			(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = x[0]
+			(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = x[0][:6]
 			now = time()
 			expires = min(120, merkleTree.jobExpire - now)
 			# Clients without expire extension assume 60 seconds of roll time
