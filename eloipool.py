@@ -295,15 +295,15 @@ def blockSubmissionThread(payload, blkhash, share):
 	gmperr = None
 	while True:
 		try:
-			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
+			reason = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
 		except BaseException as gbterr:
 			try:
-				rv = UpstreamBitcoindJSONRPC.getmemorypool(payload)
-				if rv is True:
-					rv = None
-				elif rv is False:
-					rv = 'rejected'
+				reason = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+				if reason is True:
+					reason = None
+				elif reason is False:
+					reason = 'rejected'
 				break
 			except BaseException as e2:
 				gmperr = e2
@@ -320,10 +320,10 @@ def blockSubmissionThread(payload, blkhash, share):
 					share['upstreamResult'] = False
 					logShare(share)
 				return
-	if rv:
+	if reason:
 		# FIXME: The returned value could be a list of multiple responses
-		RBFs.append( (('upstream reject', rv, time()), payload, blkhash, share) )
-		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
+		RBFs.append( (('upstream reject', reason, time()), payload, blkhash, share) )
+		RaiseRedFlags('Upstream block submission failed: %s' % (reason,))
 	if share['upstreamRejectReason'] is PendingUpstream:
 		share['upstreamRejectReason'] = reason
 		share['upstreamResult'] = not reason
