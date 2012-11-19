@@ -14,10 +14,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import asynchat
 from base64 import b64decode
 from datetime import datetime
 from email.utils import formatdate
+from gzip import GzipFile
+import io
 import logging
 import networkserver
 import os
@@ -84,6 +85,13 @@ class HTTPHandler(networkserver.SocketHandler):
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
 		else:
+			if 'gzip' in self.quirks:
+				headers['Content-Encoding'] = 'gzip'
+				headers['Vary'] = 'Content-Encoding'
+				gz = io.BytesIO()
+				with GzipFile(fileobj=gz, mode='wb') as raw:
+					raw.write(body)
+				body = gz.getvalue()
 			headers['Content-Length'] = len(body)
 		for k, v in headers.items():
 			if v is None: continue
@@ -102,6 +110,10 @@ class HTTPHandler(networkserver.SocketHandler):
 		if headers is None: headers = {}
 		headers.setdefault('Content-Type', 'text/plain')
 		return self.sendReply(500, reason.encode('utf8'), headers)
+	
+	def doHeader_accept_encoding(self, value):
+		if b'gzip' in value:
+			self.quirks['gzip'] = True
 	
 	def doHeader_authorization(self, value):
 		value = value.split(b' ')
@@ -192,75 +204,6 @@ class HTTPHandler(networkserver.SocketHandler):
 		except:
 			self.logger.error(traceback.format_exc())
 	
-	def handle_error(self):
-		self.logger.debug(traceback.format_exc())
-		self.handle_close()
-	
-	get_terminator = asynchat.async_chat.get_terminator
-	set_terminator = asynchat.async_chat.set_terminator
-	
-	def handle_readbuf(self):
-		while self.ac_in_buffer:
-			lb = len(self.ac_in_buffer)
-			terminator = self.get_terminator()
-			if not terminator:
-				# no terminator, collect it all
-				self.collect_incoming_data (self.ac_in_buffer)
-				self.ac_in_buffer = b''
-			elif isinstance(terminator, int):
-				# numeric terminator
-				n = terminator
-				if lb < n:
-					self.collect_incoming_data (self.ac_in_buffer)
-					self.ac_in_buffer = b''
-					self.terminator = self.terminator - lb
-				else:
-					self.collect_incoming_data (self.ac_in_buffer[:n])
-					self.ac_in_buffer = self.ac_in_buffer[n:]
-					self.terminator = 0
-					self.found_terminator()
-			else:
-				# 3 cases:
-				# 1) end of buffer matches terminator exactly:
-				#    collect data, transition
-				# 2) end of buffer matches some prefix:
-				#    collect data to the prefix
-				# 3) end of buffer does not match any prefix:
-				#    collect data
-				# NOTE: this supports multiple different terminators, but
-				#       NOT ones that are prefixes of others...
-				if isinstance(self.ac_in_buffer, type(terminator)):
-					terminator = (terminator,)
-				termidx = tuple(map(self.ac_in_buffer.find, terminator))
-				try:
-					index = min(x for x in termidx if x >= 0)
-				except ValueError:
-					index = -1
-				if index != -1:
-					# we found the terminator
-					if index > 0:
-						# don't bother reporting the empty string (source of subtle bugs)
-						self.collect_incoming_data (self.ac_in_buffer[:index])
-					specific_terminator = terminator[termidx.index(index)]
-					terminator_len = len(specific_terminator)
-					self.ac_in_buffer = self.ac_in_buffer[index+terminator_len:]
-					# This does the Right Thing if the terminator is changed here.
-					self.found_terminator()
-				else:
-					# check for a prefix of the terminator
-					termidx = tuple(map(lambda a: asynchat.find_prefix_at_end (self.ac_in_buffer, a), terminator))
-					index = max(termidx)
-					if index:
-						if index != lb:
-							# we found a prefix, collect up to the prefix
-							self.collect_incoming_data (self.ac_in_buffer[:-index])
-							self.ac_in_buffer = self.ac_in_buffer[-index:]
-						break
-					else:
-						# no prefix, collect it all
-						self.collect_incoming_data (self.ac_in_buffer)
-						self.ac_in_buffer = b''
-	
 	def handle_src_request(self):
 		if _SourceFiles is None:
 			return self.sendReply(404)
@@ -320,12 +263,11 @@ class HTTPHandler(networkserver.SocketHandler):
 		# proxies can do multiple requests in one connection for multiple clients, so reset address every time
 		self.remoteHost = self.addr[0]
 	
-	collect_incoming_data = asynchat.async_chat._collect_incoming_data
-	
 	def __init__(self, *a, **ka):
 		super().__init__(*a, **ka)
 		self.quirks = dict(self.default_quirks)
 		self.reset_request()
 	
+setattr(HTTPHandler, 'doHeader_accept-encoding', HTTPHandler.doHeader_accept_encoding);
 setattr(HTTPHandler, 'doHeader_content-length', HTTPHandler.doHeader_content_length);
 setattr(HTTPHandler, 'doHeader_x-forwarded-for', HTTPHandler.doHeader_x_forwarded_for);

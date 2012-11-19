@@ -18,6 +18,7 @@ from binascii import b2a_hex
 import bitcoin.script
 from bitcoin.script import countSigOps
 from bitcoin.txn import Txn
+from bitcoin.varlen import varlenEncode, varlenDecode
 from collections import deque
 from copy import deepcopy
 from queue import Queue
@@ -33,6 +34,33 @@ from util import BEhash2int, Bits2Target
 
 _makeCoinbase = [0, 0]
 inf = float('inf')
+
+def MakeBlockHeader(MRD):
+	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
+	timestamp = time() + merkleTree.timeOffset
+	timestamp = pack('<L', int(timestamp))
+	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	return hdr
+
+def assembleBlock(blkhdr, txlist):
+	payload = blkhdr
+	payload += varlenEncode(len(txlist))
+	for tx in txlist:
+		payload += tx.data
+	return payload
+
+def _CopyMTAttrs(dest, src):
+	haveUpdate = False
+	for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset', 'jobExpire'):
+		v = getattr(src, k, None)
+		if v == getattr(dest, k, None):
+			continue
+		haveUpdate = True
+		if v is None and hasattr(dest, k):
+			delattr(dest, k)
+		else:
+			setattr(dest, k, v)
+	return haveUpdate
 
 class merkleMaker(threading.Thread):
 	OldGMP = None
@@ -68,8 +96,12 @@ class merkleMaker(threading.Thread):
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
 		
+		self.ready = False
+		self.readyCV = threading.Condition()
+		
 		self.currentBlock = (None, None, None)
 		
+		self.curClearMerkleTree = None
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
 		self.LowestMerkleRoots = self.WorkQueueSizeRegular[1]
@@ -77,10 +109,6 @@ class merkleMaker(threading.Thread):
 		if not hasattr(self, 'WorkQueueSizeClear'):
 			self.WorkQueueSizeClear = self.WorkQueueSizeLongpoll
 		self._MaxClearSize = max(1, self.WorkQueueSizeClear[1], self.WorkQueueSizeLongpoll[1])
-		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
-		self.clearMerkleTree.upstreamTarget = (2 ** 224) - 1
-		self.clearMerkleTree.coinbasePrefix = b''
-		self.clearMerkleTree.timeOffset = 0
 		self.clearMerkleRoots = Queue(self._MaxClearSize)
 		self.LowestClearMerkleRoots = self.WorkQueueSizeClear[1]
 		self.nextMerkleRoots = Queue(self._MaxClearSize)
@@ -94,9 +122,22 @@ class merkleMaker(threading.Thread):
 		
 		self.lastMerkleUpdate = 0
 		self.nextMerkleUpdate = 0
-		global now
-		now = time()
-		self.updateMerkleTree()
+	
+	def createClearMerkleTree(self, height):
+		subsidy = 5000000000 >> (height // 210000)
+		if self.WorkQueueSizeLongpoll[1]:
+			cbtxn = self.makeCoinbaseTxn(subsidy, False)
+		else:
+			# Skip makeCoinbaseTxn in case TrackerAddr is not defined ("proxy mode")
+			# NOTE: this is only "valid" because WorkQueueSizeLongpoll[1] (its maximum) is 0, so clear coinbase txns are never really used
+			# FIXME: They actually are used by GBT and Stratum, so fix this HACK
+			cbtxn = Txn.new()
+		cbtxn.assemble()
+		mt = MerkleTree([cbtxn])
+		mt.upstreamTarget = (2 ** 224) - 1
+		mt.coinbasePrefix = b''
+		mt.timeOffset = 0
+		return mt
 	
 	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
@@ -112,10 +153,10 @@ class merkleMaker(threading.Thread):
 				))
 		
 		# Old block is invalid
-		self.currentMerkleTree = self.clearMerkleTree
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
 		
+		lastHeight = self.currentBlock[1]
 		if height is None:
 			height = self.currentBlock[1] + 1
 		if bits is None:
@@ -125,6 +166,7 @@ class merkleMaker(threading.Thread):
 				self.currentBlock = (None, height - 1, None)
 				self.clearMerkleRoots = Queue(0)
 				self.merkleRoots.clear()
+				self.ready = False
 				return
 			else:
 				bits = self.currentBlock[2]
@@ -132,21 +174,34 @@ class merkleMaker(threading.Thread):
 		if _HBH is None:
 			_HBH = (b2a_hex(newBlock[::-1]).decode('utf8'), b2a_hex(bits[::-1]).decode('utf8'))
 		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
-		self.clearMerkleTree.upstreamTarget = max(self.clearMerkleTree.upstreamTarget, Bits2Target(bits))
 		self.currentBlock = (newBlock, height, bits)
 		
-		if self.currentBlock[1] != height:
-			if self.currentBlock[1] == height - 1:
+		if lastHeight != height:
+			# TODO: Perhaps reuse clear merkle trees more intelligently
+			OldClearMT = self.curClearMerkleTree
+			if lastHeight == height - 1:
+				self.curClearMerkleTree = self.nextMerkleTree
 				self.clearMerkleRoots = self.nextMerkleRoots
 				self.logger.debug('Adopting next-height clear merkleroots :)')
 			else:
-				if self.currentBlock[1]:
-					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
+				if lastHeight:
+					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (lastHeight, height))
+				self.curClearMerkleTree = self.createClearMerkleTree(height)
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+			self.nextMerkleTree = self.createClearMerkleTree(height + 1)
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
+			if OldClearMT:
+				_CopyMTAttrs(self.curClearMerkleTree, OldClearMT)
 		else:
 			self.logger.debug('Already using clear merkleroots for this height')
+		self.curClearMerkleTree.upstreamTarget = max(self.curClearMerkleTree.upstreamTarget, Bits2Target(bits))
+		self.currentMerkleTree = self.curClearMerkleTree
 		self.merkleRoots.clear()
+		
+		if not self.ready:
+			self.ready = True
+			with self.readyCV:
+				self.readyCV.notify_all()
 		
 		self.needMerkle = 2
 		self.onBlockChange()
@@ -461,21 +516,40 @@ class merkleMaker(threading.Thread):
 		self._figureTimeRules(MP, newMerkleTree)
 		
 		haveUpdate = newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot()
-		for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset', 'jobExpire'):
-			v = getattr(newMerkleTree, k, None)
-			if v == getattr(self.currentMerkleTree, k, None):
-				continue
+		if _CopyMTAttrs(self.curClearMerkleTree, newMerkleTree):
 			haveUpdate = True
-			if v is None:
-				delattr(self.clearMerkleTree, k)
-			else:
-				setattr(self.clearMerkleTree, k, v)
 		
 		if haveUpdate:
 			newMerkleTree.POTInfo = MP.get('POTInfo')
 			newMerkleTree.oMP = oMP
-			self.logger.debug('Updating merkle tree')
-			self.currentMerkleTree = newMerkleTree
+			
+			if (not self.OldGMP) and 'proposal' in MP.get('capabilities', ()):
+				(prevBlock, height, bits) = self.currentBlock
+				coinbase = self.makeCoinbase(height=height)
+				cbtxn.setCoinbase(coinbase)
+				cbtxn.assemble()
+				merkleRoot = newMerkleTree.merkleRoot()
+				MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
+				blkhdr = MakeBlockHeader(MRD)
+				data = assembleBlock(blkhdr, txnlist)
+				propose = self.access.getblocktemplate({
+					"mode": "proposal",
+					"data": b2a_hex(data).decode('utf8'),
+				})
+				if propose is None:
+					self.logger.debug('Updating merkle tree (upstream accepted proposal)')
+					self.currentMerkleTree = newMerkleTree
+				else:
+					self.RejectedProposal = (newMerkleTree, propose)
+					try:
+						propose = propose['reject-reason']
+					except:
+						pass
+					self.logger.error('Upstream rejected proposed block: %s' % (propose,))
+			else:
+				self.logger.debug('Updating merkle tree (no proposal support)')
+				self.currentMerkleTree = newMerkleTree
+		
 		self.lastMerkleUpdate = now
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 		noLaterThan = newMerkleTree.jobExpire - getattr(self, 'ExpectedUpstreamLatency', 0) - getattr(self, 'MinimumJobExpiration', 64)
@@ -563,11 +637,11 @@ class merkleMaker(threading.Thread):
 	
 	def makeClear(self):
 		self._doing('clear merkle roots')
-		self._makeOne(self.clearMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1])
+		self._makeOne(self.clearMerkleRoots.put, self.curClearMerkleTree, height=self.currentBlock[1])
 	
 	def makeNext(self):
 		self._doing('longpoll merkle roots')
-		self._makeOne(self.nextMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1] + 1)
+		self._makeOne(self.nextMerkleRoots.put, self.nextMerkleTree, height=self.currentBlock[1] + 1)
 	
 	def makeRegular(self):
 		self._doing('regular merkle roots')
@@ -577,7 +651,7 @@ class merkleMaker(threading.Thread):
 		global now
 		
 		# No bits = no mining :(
-		if self.currentBlock[2] is None:
+		if not self.ready:
 			return self.updateMerkleTree()
 		
 		# First, ensure we have the minimum clear, next, and regular (in that order)
@@ -646,12 +720,17 @@ class merkleMaker(threading.Thread):
 		(prevBlock, height, bits) = self.currentBlock
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
-	def getMC(self):
+	def getMC(self, wantClear = False):
+		if not self.ready:
+			with self.readyCV:
+				while not self.ready:
+					self.readyCV.wait()
 		(prevBlock, height, bits) = self.currentBlock
-		mt = self.currentMerkleTree
+		mt = self.curClearMerkleTree if wantClear else self.currentMerkleTree
 		cbpfx = mt.coinbasePrefix
 		cb = self.makeCoinbase(height=height, pfx=cbpfx)
-		return (height, mt, cb, prevBlock, bits)
+		rollPrevBlk = (mt == self.curClearMerkleTree)
+		return (height, mt, cb, prevBlock, bits, rollPrevBlk)
 
 # merkleMaker tests
 def _test():

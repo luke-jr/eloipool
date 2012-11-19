@@ -31,7 +31,7 @@ if len(logging.root.handlers) == 0:
 		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
 		level=logging.DEBUG,
 	)
-	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer'):
+	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer', 'WorkLogPruner'):
 		logging.getLogger(infoOnly).setLevel(logging.INFO)
 
 def RaiseRedFlags(reason):
@@ -97,12 +97,15 @@ import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
+userStatus = {}
 networkTarget = None
 DupeShareHACK = {}
 
 server = None
+stratumsrv = None
 def updateBlocks():
 	server.wakeLongpoll()
+	stratumsrv.updateJob()
 
 def blockChanged():
 	global DupeShareHACK
@@ -115,7 +118,8 @@ def blockChanged():
 	else:
 		networkTarget = Bits2Target(bits)
 	workLog.clear()
-	updateBlocks()
+	server.wakeLongpoll(wantClear=True)
+	stratumsrv.updateJob(wantClear=True)
 
 
 from time import sleep, time
@@ -145,13 +149,6 @@ WorkLogPruner.logger = logging.getLogger('WorkLogPruner')
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
-if config.WorkQueueSizeLongpoll[1]:
-	MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
-else:
-	# Skip makeCoinbaseTxn in case TrackerAddr is not defined ("proxy mode")
-	# NOTE: this is only "valid" because WorkQueueSizeLongpoll[1] (its maximum) is 0, so clearCoinbaseTxn is never really used
-	MM.clearCoinbaseTxn = Txn.new()
-MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
@@ -159,10 +156,12 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
+from math import log
+from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import PendingUpstream, RejectedShare, dblsha, LEhash2int, swap32
+from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
@@ -173,29 +172,120 @@ if hasattr(config, 'GotWorkURI'):
 if not hasattr(config, 'DelayLogForUpstream'):
 	config.DelayLogForUpstream = False
 
+if not hasattr(config, 'DynamicTargetting'):
+	config.DynamicTargetting = 0
+else:
+	if not hasattr(config, 'DynamicTargetWindow'):
+		config.DynamicTargetWindow = 120
+	config.DynamicTargetGoal *= config.DynamicTargetWindow / 60
+
 def submitGotwork(info):
 	try:
 		gotwork.gotwork(info)
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
+def clampTarget(target, DTMode):
+	# ShareTarget is the minimum
+	if target is None or target > config.ShareTarget:
+		target = config.ShareTarget
+	
+	# Never target above the network, as we'd lose blocks
+	if target < networkTarget:
+		target = networkTarget
+	
+	# FIXME: Never target above the upstream either
+	
+	if DTMode == 2:
+		# Ceil target to a power of two :)
+		target = 2**int(log(target, 2) + 1) - 1
+	elif DTMode == 3:
+		# Round target to multiple of bdiff 1
+		target = bdiff1target / int(round(target2bdiff(target)))
+	
+	# Return None for ShareTarget to save memory
+	if target == config.ShareTarget:
+		return None
+	return target
+
+def getTarget(username, now, DTMode = None):
+	if DTMode is None:
+		DTMode = config.DynamicTargetting
+	if not DTMode:
+		return None
+	if username in userStatus:
+		status = userStatus[username]
+	else:
+		# No record, use default target
+		userStatus[username] = [None, now, 0]
+		return clampTarget(None, DTMode)
+	(targetIn, lastUpdate, work) = status
+	if work <= config.DynamicTargetGoal:
+		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
+			# No reason to change it just yet
+			return clampTarget(targetIn, DTMode)
+		if not work:
+			# No shares received, reset to minimum
+			if targetIn:
+				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
+				userStatus[username] = [None, now, 0]
+			return clampTarget(None, DTMode)
+	
+	deltaSec = now - lastUpdate
+	target = targetIn or config.ShareTarget
+	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
+	target = clampTarget(target, DTMode)
+	if target != targetIn:
+		pfx = 'Retargetting %s' % (repr(username),)
+		tin = targetIn or config.ShareTarget
+		getTarget.logger.debug("%s from: %064x (pdiff %s)" % (pfx, tin, target2pdiff(tin)))
+		tgt = target or config.ShareTarget
+		getTarget.logger.debug("%s   to: %064x (pdiff %s)" % (pfx, tgt, target2pdiff(tgt)))
+	userStatus[username] = [target, now, 0]
+	return target
+getTarget.logger = logging.getLogger('getTarget')
+
+def RegisterWork(username, wli, wld):
+	now = time()
+	target = getTarget(username, now)
+	wld = tuple(wld) + (target,)
+	workLog.setdefault(username, {})[wli] = (wld, now)
+	return target or config.ShareTarget
+
 def getBlockHeader(username):
 	MRD = MM.getMRD()
-	(merkleRoot, merkleTree, coinbase, prevBlock, bits, rollPrevBlk) = MRD
-	timestamp = time() + merkleTree.timeOffset
-	timestamp = pack('<L', int(timestamp))
-	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	merkleRoot = MRD[0]
+	hdr = MakeBlockHeader(MRD)
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
-	return (hdr, workLog[username][merkleRoot])
+	target = RegisterWork(username, merkleRoot, MRD)
+	return (hdr, workLog[username][merkleRoot], target)
 
-def getBlockTemplate(username):
-	MC = MM.getMC()
-	(dummy, merkleTree, coinbase, prevBlock, bits) = MC
+def getBlockTemplate(username, p_magic = None):
+	if server.tls.wantClear:
+		wantClear = True
+	elif p_magic and username not in workLog:
+		wantClear = True
+		p_magic[0] = True
+	else:
+		wantClear = False
+	MC = MM.getMC(wantClear)
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	workLog.setdefault(username, {})[wli] = (MC, time())
-	return MC
+	target = RegisterWork(username, wli, MC)
+	return (MC, workLog[username][wli], target)
+
+def getStratumJob(jobid, wantClear = False):
+	MC = MM.getMC(wantClear)
+	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
+	now = time()
+	workLog.setdefault(None, {})[jobid] = (MC, now)
+	return (MC, workLog[None][jobid])
+
+def getExistingStratumJob(jobid):
+	wld = workLog[None][jobid]
+	return (wld[0], wld)
 
 loggersShare = []
 
@@ -204,23 +294,20 @@ RBPs = []
 
 from bitcoin.varlen import varlenEncode, varlenDecode
 import bitcoin.txn
-def assembleBlock(blkhdr, txlist):
-	payload = blkhdr
-	payload += varlenEncode(len(txlist))
-	for tx in txlist:
-		payload += tx.data
-	return payload
+from merklemaker import assembleBlock
 
+RBFs = []
 def blockSubmissionThread(payload, blkhash, share):
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
+	gmperr = None
 	while True:
 		try:
 			# BIP 22 standard submitblock
 			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
-		except:
+		except BaseException as gbterr:
 			try:
 				try:
 					# bitcoind 0.5/0.6 getmemorypool
@@ -233,18 +320,20 @@ def blockSubmissionThread(payload, blkhash, share):
 				elif rv is False:
 					rv = 'rejected'
 				break
-			except:
-				pass
+			except BaseException as e2:
+				gmperr = e2
 			now = time()
 			if now > nexterr:
 				# FIXME: This will show "Method not found" on pre-BIP22 servers
 				RaiseRedFlags(traceback.format_exc())
 				nexterr = now + 5
 			if MM.currentBlock[0] not in myblock:
+				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
 				RaiseRedFlags('Giving up on submitting block upstream')
 				return
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
+		RBFs.append( (('upstream reject', rv, time()), payload, blkhash, share) )
 		blockSubmissionThread.logger.warning('Upstream block submission failed: %s' % (rv,))
 	if share['upstreamRejectReason'] is PendingUpstream:
 		share['upstreamRejectReason'] = reason
@@ -252,10 +341,7 @@ def blockSubmissionThread(payload, blkhash, share):
 		logShare(share)
 blockSubmissionThread.logger = logging.getLogger('blockSubmission')
 
-_STA = '%064x' % (config.ShareTarget,)
-def checkShare(share):
-	shareTime = share['time'] = time()
-	
+def checkData(share):
 	data = share['data']
 	data = data[:80]
 	(prevBlock, height, bits) = MM.currentBlock
@@ -265,11 +351,6 @@ def checkShare(share):
 			raise RejectedShare('stale-prevblk')
 		raise RejectedShare('bad-prevblk')
 	
-	# TODO: use userid
-	username = share['username']
-	if username not in workLog:
-		raise RejectedShare('unknown-user')
-	
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
 	
@@ -277,29 +358,74 @@ def checkShare(share):
 	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
 	if data[1:4] != b'\0\0\0' or data[0] > 2:
 		raise RejectedShare('bad-version')
+
+def buildStratumData(share, merkleroot):
+	(prevBlock, height, bits) = MM.currentBlock
 	
-	shareMerkleRoot = data[36:68]
-	if 'blkdata' in share:
-		pl = share['blkdata']
-		(txncount, pl) = varlenDecode(pl)
-		cbtxn = bitcoin.txn.Txn(pl)
-		cbtxn.disassemble(retExtra=True)
-		coinbase = cbtxn.getCoinbase()
-		wliPos = coinbase[0] + 2
-		wliLen = coinbase[wliPos - 1]
-		wli = coinbase[wliPos:wliPos+wliLen]
+	data = b'\x02\0\0\0'
+	data += prevBlock
+	data += merkleroot
+	data += share['ntime'][::-1]
+	data += bits
+	data += share['nonce'][::-1]
+	
+	share['data'] = data
+	return data
+
+def checkShare(share):
+	shareTime = share['time'] = time()
+	
+	username = share['username']
+	if 'data' in share:
+		# getwork/GBT
+		checkData(share)
+		data = share['data']
+		
+		if username not in workLog:
+			raise RejectedShare('unknown-user')
+		MWL = workLog[username]
+		
+		shareMerkleRoot = data[36:68]
+		if 'blkdata' in share:
+			pl = share['blkdata']
+			(txncount, pl) = varlenDecode(pl)
+			cbtxn = bitcoin.txn.Txn(pl)
+			othertxndata = cbtxn.disassemble(retExtra=True)
+			coinbase = cbtxn.getCoinbase()
+			wliPos = coinbase[0] + 2
+			wliLen = coinbase[wliPos - 1]
+			wli = coinbase[wliPos:wliPos+wliLen]
+			mode = 'MC'
+			moden = 1
+		else:
+			wli = shareMerkleRoot
+			mode = 'MRD'
+			moden = 0
+			coinbase = None
+	else:
+		# Stratum
+		MWL = workLog[None]
+		wli = share['jobid']
+		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
 		moden = 1
-	else:
-		wli = shareMerkleRoot
-		mode = 'MRD'
-		moden = 0
+		othertxndata = b''
 	
-	MWL = workLog[username]
 	if wli not in MWL:
 		raise RejectedShare('unknown-work')
 	(wld, issueT) = MWL[wli]
 	share[mode] = wld
+	
+	share['issuetime'] = issueT
+	
+	(workMerkleTree, workCoinbase) = wld[1:3]
+	if 'jobid' in share:
+		cbtxn = deepcopy(workMerkleTree.data[0])
+		coinbase = workCoinbase + share['extranonce1'] + share['extranonce2']
+		cbtxn.setCoinbase(coinbase)
+		cbtxn.assemble()
+		data = buildStratumData(share, workMerkleTree.withFirst(cbtxn))
+		shareMerkleRoot = data[36:68]
 	
 	if data in DupeShareHACK:
 		raise RejectedShare('duplicate')
@@ -309,9 +435,6 @@ def checkShare(share):
 	if blkhash[28:] != b'\0\0\0\0':
 		raise RejectedShare('H-not-zero')
 	blkhashn = LEhash2int(blkhash)
-	
-	workMerkleTree = wld[1]
-	workCoinbase = wld[2]
 	
 	global networkTarget
 	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
@@ -324,17 +447,21 @@ def checkShare(share):
 	txlist = workMerkleTree.data
 	txlist = [deepcopy(txlist[0]),] + txlist[1:]
 	cbtxn = txlist[0]
-	cbtxn.setCoinbase(workCoinbase)
+	cbtxn.setCoinbase(coinbase or workCoinbase)
 	cbtxn.assemble()
 	
 	isBlock = blkhashn <= networkTarget
 	if isBlock or blkhashn <= workMerkleTree.upstreamTarget:
 		logfunc("Submitting upstream")
-		RBDs.append( deepcopy( (data, txlist, share.get('blkdata', None), workMerkleTree) ) )
+		RBDs.append( deepcopy( (data, txlist, share.get('blkdata', None), workMerkleTree, share, wld) ) )
 		if not moden:
 			payload = assembleBlock(data, txlist)
 		else:
-			payload = share['data'] + share['blkdata']
+			payload = share['data']
+			if len(othertxndata):
+				payload += share['blkdata']
+			else:
+				payload += assembleBlock(data, txlist)[80:]
 		if isBlock:
 			logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 			RBPs.append(payload)
@@ -368,10 +495,19 @@ def checkShare(share):
 		except:
 			checkShare.logger.warning('Failed to build gotwork request')
 	
-	if blkhashn > config.ShareTarget:
+	if 'target' in share:
+		workTarget = share['target']
+	elif len(wld) > 6:
+		workTarget = wld[6]
+	else:
+		workTarget = None
+	
+	if workTarget is None:
+		workTarget = config.ShareTarget
+	if blkhashn > workTarget:
 		raise RejectedShare('high-hash')
-	share['target'] = config.ShareTarget
-	share['_targethex'] = _STA
+	share['target'] = workTarget
+	share['_targethex'] = '%064x' % (workTarget,)
 	
 	# FIXME: enforce lower expiration times? (right now, it's pretty difficult to hit ones under 120 seconds anyway)
 	if shareTime < issueT - 120:
@@ -383,8 +519,17 @@ def checkShare(share):
 	if shareTimestamp > min(shareTimeX + workMerkleTree.maxtimeOffset, workMerkleTree.maxtime):
 		raise RejectedShare('time-too-new')
 	
+	if config.DynamicTargetting and username in userStatus:
+		# NOTE: userStatus[username] only doesn't exist across restarts
+		status = userStatus[username]
+		target = status[0] or config.ShareTarget
+		if target == workTarget:
+			userStatus[username][2] += 1
+		else:
+			userStatus[username][2] += float(target) / workTarget
+	
 	if moden:
-		cbpre = cbtxn.getCoinbase()
+		cbpre = workCoinbase
 		cbpreLen = len(cbpre)
 		if coinbase[:cbpreLen] != cbpre:
 			raise RejectedShare('bad-cb-prefix')
@@ -397,14 +542,13 @@ def checkShare(share):
 		if len(coinbase) > 100:
 			raise RejectedShare('bad-cb-length')
 		
-		cbtxn.setCoinbase(coinbase)
-		cbtxn.assemble()
 		if shareMerkleRoot != workMerkleTree.withFirst(cbtxn):
 			raise RejectedShare('bad-txnmrklroot')
 		
-		allowed = assembleBlock(data, txlist)
-		if allowed != share['data'] + share['blkdata']:
-			raise RejectedShare('bad-txns')
+		if len(othertxndata):
+			allowed = assembleBlock(data, txlist)[80:]
+			if allowed != share['blkdata']:
+				raise RejectedShare('bad-txns')
 checkShare.logger = logging.getLogger('checkShare')
 
 def logShare(share):
@@ -462,7 +606,7 @@ def stopServers():
 	
 	logger.info('Stopping servers...')
 	global bcnode, server
-	servers = (bcnode, server)
+	servers = (bcnode, server, stratumsrv)
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
@@ -583,6 +727,7 @@ import interactivemode
 from networkserver import NetworkListener
 import threading
 import sharelogging
+from stratumserver import StratumServer
 import imp
 
 if __name__ == "__main__":
@@ -642,6 +787,8 @@ if __name__ == "__main__":
 	import jsonrpc_setworkaux
 	
 	server = JSONRPCServer()
+	server.tls = threading.local()
+	server.tls.wantClear = False
 	if hasattr(config, 'JSONRPCAddress'):
 		logging.getLogger('backwardCompatibility').warn('JSONRPCAddress configuration variable is deprecated; upgrade to JSONRPCAddresses list before 2013-03-05')
 		if not hasattr(config, 'JSONRPCAddresses'):
@@ -663,6 +810,17 @@ if __name__ == "__main__":
 		server.TrustedForwarders = config.TrustedForwarders
 	server.ServerName = config.ServerName
 	
+	stratumsrv = StratumServer()
+	stratumsrv.getStratumJob = getStratumJob
+	stratumsrv.getExistingStratumJob = getExistingStratumJob
+	stratumsrv.receiveShare = receiveShare
+	stratumsrv.getTarget = getTarget
+	stratumsrv.defaultTarget = config.ShareTarget
+	if not hasattr(config, 'StratumAddresses'):
+		config.StratumAddresses = ()
+	for a in config.StratumAddresses:
+		NetworkListener(stratumsrv, a)
+	
 	MM.start()
 	
 	restoreState()
@@ -674,5 +832,9 @@ if __name__ == "__main__":
 	bcnode_thr = threading.Thread(target=bcnode.serve_forever)
 	bcnode_thr.daemon = True
 	bcnode_thr.start()
+	
+	stratum_thr = threading.Thread(target=stratumsrv.serve_forever)
+	stratum_thr.daemon = True
+	stratum_thr.start()
 	
 	server.serve_forever()

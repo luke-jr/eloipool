@@ -19,9 +19,10 @@ import logging
 import os
 import select
 import socket
+import threading
 from time import time
 import traceback
-from util import ScheduleDict, tryErr
+from util import ScheduleDict, WithNoop, tryErr
 
 EPOLL_READ = select.EPOLLIN | select.EPOLLPRI | select.EPOLLERR | select.EPOLLHUP
 EPOLL_WRITE = select.EPOLLOUT
@@ -31,7 +32,6 @@ class SocketHandler:
 	ac_out_buffer_size = 4096
 	
 	def handle_close(self):
-		self.changeTask(None)
 		self.wbuf = None
 		self.close()
 	
@@ -57,6 +57,72 @@ class SocketHandler:
 		self.server.lastReadbuf = self.ac_in_buffer
 		
 		self.handle_readbuf()
+	
+	collect_incoming_data = asynchat.async_chat._collect_incoming_data
+	get_terminator = asynchat.async_chat.get_terminator
+	set_terminator = asynchat.async_chat.set_terminator
+	
+	def handle_readbuf(self):
+		while self.ac_in_buffer:
+			lb = len(self.ac_in_buffer)
+			terminator = self.get_terminator()
+			if not terminator:
+				# no terminator, collect it all
+				self.collect_incoming_data (self.ac_in_buffer)
+				self.ac_in_buffer = b''
+			elif isinstance(terminator, int):
+				# numeric terminator
+				n = terminator
+				if lb < n:
+					self.collect_incoming_data (self.ac_in_buffer)
+					self.ac_in_buffer = b''
+					self.terminator = self.terminator - lb
+				else:
+					self.collect_incoming_data (self.ac_in_buffer[:n])
+					self.ac_in_buffer = self.ac_in_buffer[n:]
+					self.terminator = 0
+					self.found_terminator()
+			else:
+				# 3 cases:
+				# 1) end of buffer matches terminator exactly:
+				#    collect data, transition
+				# 2) end of buffer matches some prefix:
+				#    collect data to the prefix
+				# 3) end of buffer does not match any prefix:
+				#    collect data
+				# NOTE: this supports multiple different terminators, but
+				#       NOT ones that are prefixes of others...
+				if isinstance(self.ac_in_buffer, type(terminator)):
+					terminator = (terminator,)
+				termidx = tuple(map(self.ac_in_buffer.find, terminator))
+				try:
+					index = min(x for x in termidx if x >= 0)
+				except ValueError:
+					index = -1
+				if index != -1:
+					# we found the terminator
+					if index > 0:
+						# don't bother reporting the empty string (source of subtle bugs)
+						self.collect_incoming_data (self.ac_in_buffer[:index])
+					specific_terminator = terminator[termidx.index(index)]
+					terminator_len = len(specific_terminator)
+					self.ac_in_buffer = self.ac_in_buffer[index+terminator_len:]
+					# This does the Right Thing if the terminator is changed here.
+					self.found_terminator()
+				else:
+					# check for a prefix of the terminator
+					termidx = tuple(map(lambda a: asynchat.find_prefix_at_end (self.ac_in_buffer, a), terminator))
+					index = max(termidx)
+					if index:
+						if index != lb:
+							# we found a prefix, collect up to the prefix
+							self.collect_incoming_data (self.ac_in_buffer[:-index])
+							self.ac_in_buffer = self.ac_in_buffer[-index:]
+						break
+					else:
+						# no prefix, collect it all
+						self.collect_incoming_data (self.ac_in_buffer)
+						self.ac_in_buffer = b''
 	
 	def push(self, data):
 		if not len(self.wbuf):
@@ -96,17 +162,28 @@ class SocketHandler:
 		if self.fd == -1:
 			# Already closed
 			return
+		try:
+			del self.server.connections[id(self)]
+		except:
+			pass
 		self.server.unregister_socket(self.fd)
+		self.changeTask(None)
 		self.socket.close()
 		self.fd = -1
+	
+	def boot(self):
+		self.close()
 	
 	def changeTask(self, f, t = None):
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
 		if f:
 			self._Task = self.server.schedule(f, t, errHandler=self)
+		else:
+			self._Task = None
 	
 	def __init__(self, server, sock, addr):
 		self.ac_in_buffer = b''
+		self.incoming = []
 		self.wbuf = b''
 		self.closeme = False
 		self.server = server
@@ -115,6 +192,7 @@ class SocketHandler:
 		self._Task = None
 		self.fd = sock.fileno()
 		server.register_socket(self.fd, self)
+		server.connections[id(self)] = self
 		self.changeTask(self.handle_timeout, time() + 15)
 	
 	@classmethod
@@ -179,6 +257,9 @@ class NetworkListener:
 	def handle_read(self):
 		server = self.server
 		conn, addr = self.socket.accept()
+		if server.rejecting:
+			conn.close()
+			return
 		conn.setblocking(False)
 		h = server.RequestHandlerClass(server, conn, addr)
 	
@@ -202,6 +283,7 @@ class AsyncSocketServer:
 	logger = logging.getLogger('SocketServer')
 	
 	waker = False
+	schMT = False
 	
 	def __init__(self, RequestHandlerClass):
 		if not hasattr(self, 'ServerName'):
@@ -211,12 +293,18 @@ class AsyncSocketServer:
 		
 		self.running = False
 		self.keepgoing = True
+		self.rejecting = False
 		
 		self._epoll = select.epoll()
 		self._fd = {}
+		self.connections = {}
 		
 		self._sch = ScheduleDict()
 		self._schEH = {}
+		if self.schMT:
+			self._schLock = threading.Lock()
+		else:
+			self._schLock = WithNoop
 		
 		self.TrustedForwarders = ()
 		
@@ -244,16 +332,18 @@ class AsyncSocketServer:
 			raise socket.error
 	
 	def schedule(self, task, startTime, errHandler=None):
-		self._sch[task] = startTime
-		if errHandler:
-			self._schEH[id(task)] = errHandler
+		with self._schLock:
+			self._sch[task] = startTime
+			if errHandler:
+				self._schEH[id(task)] = errHandler
 		return task
 	
 	def rmSchedule(self, task):
-		del self._sch[task]
-		k = id(task)
-		if k in self._schEH:
-			del self._schEH[k]
+		with self._schLock:
+			del self._sch[task]
+			k = id(task)
+			if k in self._schEH:
+				del self._schEH[k]
 	
 	def pre_schedule(self):
 		pass
@@ -266,6 +356,10 @@ class AsyncSocketServer:
 	def final_init(self):
 		pass
 	
+	def boot_all(self):
+		for c in self.connections.values():
+			tryErr(lambda: c.boot())
+	
 	def serve_forever(self):
 		self.running = True
 		self.final_init()
@@ -276,11 +370,15 @@ class AsyncSocketServer:
 			if len(self._sch):
 				timeNow = time()
 				while True:
-					timeNext = self._sch.nextTime()
-					if timeNow < timeNext:
-						timeout = timeNext - timeNow
-						break
-					f = self._sch.shift()
+					with self._schLock:
+						if not len(self._sch):
+							timeout = -1
+							break
+						timeNext = self._sch.nextTime()
+						if timeNow < timeNext:
+							timeout = timeNext - timeNow
+							break
+						f = self._sch.shift()
 					k = id(f)
 					EH = None
 					if k in self._schEH:
@@ -293,9 +391,6 @@ class AsyncSocketServer:
 					except:
 						self.logger.error(traceback.format_exc())
 						if EH: tryErr(EH.handle_close)
-					if not len(self._sch):
-						timeout = -1
-						break
 			else:
 				timeout = -1
 			

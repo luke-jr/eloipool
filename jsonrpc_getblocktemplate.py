@@ -31,6 +31,7 @@ class _getblocktemplate:
 		'longpoll': '/LP',
 		'mutable': [
 			'coinbase/append',
+			'submit/coinbase',
 		],
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
@@ -49,11 +50,15 @@ class _getblocktemplate:
 			self.processLP(params['longpollid'])
 		
 		rv = dict(self.getblocktemplate_rv_template)
-		MC = self.server.getBlockTemplate(self.Username)
-		(height, merkleTree, cb, prevBlock, bits) = MC
+		p_magic = [False]
+		(MC, wld, target) = self.server.getBlockTemplate(self.Username, p_magic=p_magic)
+		(height, merkleTree, cb, prevBlock, bits) = MC[:5]
 		rv['height'] = height
 		rv['previousblockhash'] = b2a_hex(prevBlock[::-1]).decode('ascii')
-		rv['longpollid'] = str(self.server.LPId)
+		if p_magic[0]:
+			rv['longpollid'] = 'bootstrap'
+		else:
+			rv['longpollid'] = str(self.server.LPId)
 		tl = []
 		for txn in merkleTree.data[1:]:
 			txno = {}
@@ -67,6 +72,7 @@ class _getblocktemplate:
 		rv['curtime'] = now
 		rv['maxtime'] = now + 120
 		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
+		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])
 		t.setCoinbase(cb)
 		t.assemble()
