@@ -65,6 +65,8 @@ class _getwork:
 		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
 		rv['target'] = ShareTargetHexLE
 		
+		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
+		
 		return rv
 	
 	def doJSON_submitwork(self, datax):

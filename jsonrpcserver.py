@@ -53,9 +53,6 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			if not body:
 				headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
-			if self.JSONRPCMethod == 'getwork':
-				# FIXME: Move this to jsonrpc_getwork somehow
-				headers.setdefault('X-Roll-NTime', 'expire=120')
 		return super().sendReply(status, body, headers)
 	
 	def fmtError(self, reason = '', code = 100):
