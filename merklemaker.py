@@ -92,7 +92,6 @@ class merkleMaker(threading.Thread):
 		if not hasattr(self, 'WorkQueueSizeClear'):
 			self.WorkQueueSizeClear = self.WorkQueueSizeLongpoll
 		self._MaxClearSize = max(self.WorkQueueSizeClear[1], self.WorkQueueSizeLongpoll[1])
-		self.clearMerkleTree = MerkleTree([self.clearCoinbaseTxn])
 		self.clearMerkleRoots = Queue(self._MaxClearSize)
 		self.LowestClearMerkleRoots = self.WorkQueueSizeClear[1]
 		self.nextMerkleRoots = Queue(self._MaxClearSize)
@@ -106,9 +105,12 @@ class merkleMaker(threading.Thread):
 		
 		self.lastMerkleUpdate = 0
 		self.nextMerkleUpdate = 0
-		global now
-		now = time()
-		self.updateMerkleTree()
+	
+	def createClearMerkleTree(self, height):
+		subsidy = 5000000000 >> (height // 210000)
+		cbtxn = self.makeCoinbaseTxn(subsidy, False)
+		cbtxn.assemble()
+		return MerkleTree([cbtxn])
 	
 	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
@@ -124,7 +126,6 @@ class merkleMaker(threading.Thread):
 				))
 		
 		# Old block is invalid
-		self.currentMerkleTree = self.clearMerkleTree
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
 		
@@ -149,16 +150,21 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (newBlock, height, bits)
 		
 		if lastHeight != height:
+			# TODO: Perhaps reuse clear merkle trees more intelligently
 			if lastHeight == height - 1:
+				self.curClearMerkleTree = self.nextMerkleTree
 				self.clearMerkleRoots = self.nextMerkleRoots
 				self.logger.debug('Adopting next-height clear merkleroots :)')
 			else:
 				if lastHeight:
 					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (lastHeight, height))
+				self.curClearMerkleTree = self.createClearMerkleTree(height)
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+			self.nextMerkleTree = self.createClearMerkleTree(height + 1)
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
 			self.logger.debug('Already using clear merkleroots for this height')
+		self.currentMerkleTree = self.curClearMerkleTree
 		self.merkleRoots.clear()
 		
 		if not self.ready:
@@ -426,11 +432,11 @@ class merkleMaker(threading.Thread):
 	
 	def makeClear(self):
 		self._doing('clear merkle roots')
-		self._makeOne(self.clearMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1])
+		self._makeOne(self.clearMerkleRoots.put, self.curClearMerkleTree, height=self.currentBlock[1])
 	
 	def makeNext(self):
 		self._doing('longpoll merkle roots')
-		self._makeOne(self.nextMerkleRoots.put, self.clearMerkleTree, height=self.currentBlock[1] + 1)
+		self._makeOne(self.nextMerkleRoots.put, self.nextMerkleTree, height=self.currentBlock[1] + 1)
 	
 	def makeRegular(self):
 		self._doing('regular merkle roots')
@@ -515,9 +521,9 @@ class merkleMaker(threading.Thread):
 				while not self.ready:
 					self.readyCV.wait()
 		(prevBlock, height, bits) = self.currentBlock
-		mt = self.clearMerkleTree if wantClear else self.currentMerkleTree
+		mt = self.curClearMerkleTree if wantClear else self.currentMerkleTree
 		cb = self.makeCoinbase(height=height)
-		rollPrevBlk = (mt == self.clearMerkleTree)
+		rollPrevBlk = (mt == self.curClearMerkleTree)
 		return (height, mt, cb, prevBlock, bits, rollPrevBlk)
 
 # merkleMaker tests
