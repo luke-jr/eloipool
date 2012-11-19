@@ -302,11 +302,17 @@ def blockSubmissionThread(payload, blkhash, share):
 	gmperr = None
 	while True:
 		try:
+			# BIP 22 standard submitblock
 			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
 			break
 		except BaseException as gbterr:
 			try:
-				rv = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+				try:
+					# bitcoind 0.5/0.6 getmemorypool
+					rv = UpstreamBitcoindJSONRPC.getmemorypool(payload)
+				except:
+					# Old BIP 22 draft getmemorypool
+					rv = UpstreamBitcoindJSONRPC.getmemorypool(payload, {})
 				if rv is True:
 					rv = None
 				elif rv is False:
