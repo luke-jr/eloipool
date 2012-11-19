@@ -368,29 +368,29 @@ class AsyncSocketServer:
 			self.pre_schedule()
 			self.doing = 'schedule'
 			if len(self._sch):
-				with self._schLock:
-					timeNow = time()
-					while True:
+				timeNow = time()
+				while True:
+					with self._schLock:
+						if not len(self._sch):
+							timeout = -1
+							break
 						timeNext = self._sch.nextTime()
 						if timeNow < timeNext:
 							timeout = timeNext - timeNow
 							break
 						f = self._sch.shift()
-						k = id(f)
-						EH = None
-						if k in self._schEH:
-							EH = self._schEH[k]
-							del self._schEH[k]
-						try:
-							f()
-						except socket.error:
-							if EH: tryErr(EH.handle_error)
-						except:
-							self.logger.error(traceback.format_exc())
-							if EH: tryErr(EH.handle_close)
-						if not len(self._sch):
-							timeout = -1
-							break
+					k = id(f)
+					EH = None
+					if k in self._schEH:
+						EH = self._schEH[k]
+						del self._schEH[k]
+					try:
+						f()
+					except socket.error:
+						if EH: tryErr(EH.handle_error)
+					except:
+						self.logger.error(traceback.format_exc())
+						if EH: tryErr(EH.handle_close)
 			else:
 				timeout = -1
 			
