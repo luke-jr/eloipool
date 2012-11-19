@@ -330,6 +330,10 @@ def blockSubmissionThread(payload, blkhash, share):
 			if MM.currentBlock[0] not in myblock:
 				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
 				RaiseRedFlags('Giving up on submitting block upstream')
+				if share['upstreamRejectReason'] is PendingUpstream:
+					share['upstreamRejectReason'] = 'GAVE UP'
+					share['upstreamResult'] = False
+					logShare(share)
 				return
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
