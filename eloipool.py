@@ -142,8 +142,6 @@ WorkLogPruner.logger = logging.getLogger('WorkLogPruner')
 from merklemaker import merkleMaker
 MM = merkleMaker()
 MM.__dict__.update(config.__dict__)
-MM.clearCoinbaseTxn = makeCoinbaseTxn(5000000000, False)  # FIXME
-MM.clearCoinbaseTxn.assemble()
 MM.makeCoinbaseTxn = makeCoinbaseTxn
 MM.onBlockChange = blockChanged
 MM.onBlockUpdate = updateBlocks
