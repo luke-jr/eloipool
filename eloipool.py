@@ -154,13 +154,16 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
+from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
 gotwork = None
 if hasattr(config, 'GotWorkURI'):
 	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
+
+if not hasattr(config, 'DelayLogForUpstream'):
+	config.DelayLogForUpstream = False
 
 if not hasattr(config, 'DynamicTargetting'):
 	config.DynamicTargetting = 0
@@ -312,11 +315,19 @@ def blockSubmissionThread(payload, blkhash, share):
 			if MM.currentBlock[0] not in myblock:
 				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
 				RaiseRedFlags('Giving up on submitting block upstream')
+				if share['upstreamRejectReason'] is PendingUpstream:
+					share['upstreamRejectReason'] = 'GAVE UP'
+					share['upstreamResult'] = False
+					logShare(share)
 				return
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
 		RBFs.append( (('upstream reject', rv, time()), payload, blkhash, share) )
 		RaiseRedFlags('Upstream block submission failed: %s' % (rv,))
+	if share['upstreamRejectReason'] is PendingUpstream:
+		share['upstreamRejectReason'] = reason
+		share['upstreamResult'] = not reason
+		logShare(share)
 
 def checkData(share):
 	data = share['data']
@@ -440,7 +451,11 @@ def checkShare(share):
 		RBPs.append(payload)
 		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash, share)).start()
 		bcnode.submitBlock(payload)
-		share['upstreamResult'] = True
+		if config.DelayLogForUpstream:
+			share['upstreamRejectReason'] = PendingUpstream
+		else:
+			share['upstreamRejectReason'] = None
+			share['upstreamResult'] = True
 		MM.updateBlock(blkhash)
 	
 	# Gotwork hack...
@@ -517,6 +532,14 @@ def checkShare(share):
 				raise RejectedShare('bad-txns')
 checkShare.logger = logging.getLogger('checkShare')
 
+def logShare(share):
+	if '_origdata' in share:
+		share['solution'] = share['_origdata']
+	else:
+		share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
+	for i in loggersShare:
+		i.logShare(share)
+
 def receiveShare(share):
 	# TODO: username => userid
 	try:
@@ -525,12 +548,8 @@ def receiveShare(share):
 		share['rejectReason'] = str(rej)
 		raise
 	finally:
-		if '_origdata' in share:
-			share['solution'] = share['_origdata']
-		else:
-			share['solution'] = b2a_hex(swap32(share['data'])).decode('utf8')
-		for i in loggersShare:
-			i.logShare(share)
+		if not share.get('upstreamRejectReason', None) is PendingUpstream:
+			logShare(share)
 
 def newBlockNotification():
 	logging.getLogger('newBlockNotification').info('Received new block notification')
