@@ -260,6 +260,15 @@ def getBlockHeader(username):
 	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
 
+def CoinbaseToWLI(coinbase):
+	# NOTE: .index can raise ValueError
+	wliPos = coinbase.index(config.CoinbasePrefix, coinbase[0] + 1)
+	wliPos += len(config.CoinbasePrefix)
+	wliLen = coinbase[wliPos]
+	wliPos += 1
+	wli = coinbase[wliPos:wliPos+wliLen]
+	return wli
+
 def getBlockTemplate(username, p_magic = None):
 	if server.tls.wantClear:
 		wantClear = True
@@ -270,9 +279,7 @@ def getBlockTemplate(username, p_magic = None):
 		wantClear = False
 	MC = MM.getMC(wantClear)
 	(dummy, merkleTree, coinbase, prevBlock, bits) = MC[:5]
-	wliPos = coinbase[0] + 2
-	wliLen = coinbase[wliPos - 1]
-	wli = coinbase[wliPos:wliPos+wliLen]
+	wli = CoinbaseToWLI(coinbase)
 	target = RegisterWork(username, wli, MC)
 	return (MC, workLog[username][wli], target)
 
@@ -396,9 +403,11 @@ def checkShare(share):
 			cbtxn = bitcoin.txn.Txn(pl)
 			othertxndata = cbtxn.disassemble(retExtra=True)
 			coinbase = cbtxn.getCoinbase()
-			wliPos = coinbase[0] + 2
-			wliLen = coinbase[wliPos - 1]
-			wli = coinbase[wliPos:wliPos+wliLen]
+			
+			try:
+				wli = CoinbaseToWLI(coinbase)
+			except ValueError:
+				raise RejectedShare('unknown-work')
 			mode = 'MC'
 			moden = 1
 		else:
