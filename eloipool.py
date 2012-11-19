@@ -154,7 +154,7 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import RejectedShare, bdiff1target, dblsha, hash2int, swap32, target2bdiff, target2pdiff
+from util import RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
@@ -411,7 +411,7 @@ def checkShare(share):
 	blkhash = dblsha(data)
 	if blkhash[28:] != b'\0\0\0\0':
 		raise RejectedShare('H-not-zero')
-	blkhashn = hash2int(blkhash)
+	blkhashn = LEhash2int(blkhash)
 	
 	global networkTarget
 	logfunc = getattr(checkShare.logger, 'info' if blkhashn <= networkTarget else 'debug')
