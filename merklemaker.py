@@ -61,6 +61,9 @@ class merkleMaker(threading.Thread):
 	def _prepare(self):
 		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
 		
+		self.ready = False
+		self.readyCV = threading.Condition()
+		
 		self.currentBlock = (None, None, None)
 		
 		self.currentMerkleTree = None
@@ -115,6 +118,7 @@ class merkleMaker(threading.Thread):
 				# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
 				self.currentBlock = (None, height - 1, None)
 				self.clearMerkleRoots = Queue(0)
+				self.ready = False
 				return
 			else:
 				bits = self.currentBlock[2]
@@ -136,6 +140,12 @@ class merkleMaker(threading.Thread):
 			self.logger.debug('Already using clear merkleroots for this height')
 		
 		self.currentBlock = (newBlock, height, bits)
+		
+		if not self.ready:
+			self.ready = True
+			with self.readyCV:
+				self.readyCV.notify_all()
+		
 		self.needMerkle = 2
 		self.onBlockChange()
 	
@@ -369,7 +379,7 @@ class merkleMaker(threading.Thread):
 		global now
 		
 		# No bits = no mining :(
-		if self.currentBlock[2] is None:
+		if not self.ready:
 			return self.updateMerkleTree()
 		
 		# First, ensure we have the minimum clear, next, and regular (in that order)
@@ -439,6 +449,10 @@ class merkleMaker(threading.Thread):
 		return (merkleRoot, merkleTree, cb, prevBlock, bits, rollPrevBlk)
 	
 	def getMC(self):
+		if not self.ready:
+			with self.readyCV:
+				while not self.ready:
+					self.readyCV.wait()
 		(prevBlock, bits) = self.currentBlock
 		mt = self.currentMerkleTree
 		cb = self.makeCoinbase()
