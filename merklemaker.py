@@ -106,6 +106,7 @@ class merkleMaker(threading.Thread):
 		if self.currentBlock[0] != newBlock:
 			self.lastBlock = self.currentBlock
 		
+		lastHeight = self.currentBlock[1]
 		if height is None:
 			height = self.currentBlock[1] + 1
 		if bits is None:
@@ -124,13 +125,13 @@ class merkleMaker(threading.Thread):
 		self.logger.info('New block: %s (height: %d; bits: %s)' % (_HBH[0], height, _HBH[1]))
 		self.currentBlock = (newBlock, height, bits)
 		
-		if self.currentBlock[1] != height:
-			if self.currentBlock[1] == height - 1:
+		if lastHeight != height:
+			if lastHeight == height - 1:
 				self.clearMerkleRoots = self.nextMerkleRoots
 				self.logger.debug('Adopting next-height clear merkleroots :)')
 			else:
-				if self.currentBlock[1]:
-					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
+				if lastHeight:
+					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (lastHeight, height))
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
