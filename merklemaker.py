@@ -467,7 +467,10 @@ class merkleMaker(threading.Thread):
 						cbval += tmploutput[0]
 				cbtxn = self.makeCoinbaseTxn(cbval)
 			else:
-				cbtxn = Txn(bytes.fromhex(MP['coinbasetxn']))
+				cbtxnjson = MP['coinbasetxn']
+				if not isinstance(cbtxnjson, dict):
+					cbtxnjson = {'data':cbtxnjson}
+				cbtxn = Txn(bytes.fromhex(cbtxnjson['data']))
 				cbtxn.disassemble()
 			if 'coinbase' in mutable:
 				# Any coinbase we want
