@@ -84,6 +84,7 @@ class merkleMaker(threading.Thread):
 		self.readyCV = threading.Condition()
 		
 		self.currentBlock = (None, None, None)
+		self.lastBlock = (None, None, None)
 		
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
