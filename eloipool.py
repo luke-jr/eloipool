@@ -304,24 +304,30 @@ import bitcoin.txn
 from merklemaker import assembleBlock
 
 RBFs = []
-def blockSubmissionThread(payload, blkhash, share):
+def blockSubmissionThread(payload, blkhash, share, mt):
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
 	gmperr = None
+	
+	gbtparams = {}
+	workid = getattr(mt, 'upstreamWorkid', None)
+	if not workid is None:
+		gbtparams['workid'] = workid
+	
 	while True:
 		try:
 			# BIP 22 standard submitblock
-			reason = UpstreamBitcoindJSONRPC.submitblock(payload)
+			reason = UpstreamBitcoindJSONRPC.submitblock(payload, gbtparams)
 			break
 		except BaseException as gbterr:
 			try:
 				try:
+					# Old BIP 22 draft getmemorypool
+					reason = UpstreamBitcoindJSONRPC.getmemorypool(payload, gbtparams)
+				except:
 					# bitcoind 0.5/0.6 getmemorypool
 					reason = UpstreamBitcoindJSONRPC.getmemorypool(payload)
-				except:
-					# Old BIP 22 draft getmemorypool
-					reason = UpstreamBitcoindJSONRPC.getmemorypool(payload, {})
 				if reason is True:
 					reason = None
 				elif reason is False:
@@ -484,7 +490,7 @@ def checkShare(share):
 		else:
 			share['upstreamRejectReason'] = None
 			share['upstreamResult'] = True
-		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash, share)).start()
+		threading.Thread(target=blockSubmissionThread, args=(payload, blkhash, share, workMerkleTree)).start()
 		if isBlock:
 			bcnode.submitBlock(payload)
 			MM.updateBlock(blkhash)

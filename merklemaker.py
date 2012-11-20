@@ -54,7 +54,17 @@ def assembleBlock(blkhdr, txlist, mutable=()):
 
 def _CopyMTAttrs(dest, src):
 	haveUpdate = False
-	for k in ('upstreamTarget', 'coinbasePrefix', 'timeOffset', 'mintime', 'mintimeOffset', 'maxtime', 'maxtimeOffset', 'jobExpire'):
+	for k in (
+		'coinbasePrefix',
+		'jobExpire',
+		'maxtime',
+		'maxtimeOffset',
+		'mintime',
+		'mintimeOffset',
+		'timeOffset',
+		'upstreamTarget',
+		'upstreamWorkid',
+	):
 		v = getattr(src, k, None)
 		if v == getattr(dest, k, None):
 			continue
@@ -532,6 +542,7 @@ class merkleMaker(threading.Thread):
 			newMerkleTree.upstreamTarget = Bits2Target(bits)
 		
 		newMerkleTree.upstreamMutable = mutable
+		newMerkleTree.upstreamWorkid = MP.get('workid')
 		
 		self._figureTimeRules(MP, newMerkleTree)
 		
