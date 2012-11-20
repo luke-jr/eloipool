@@ -467,14 +467,15 @@ def checkShare(share):
 	if isBlock or blkhashn <= workMerkleTree.upstreamTarget:
 		logfunc("Submitting upstream")
 		RBDs.append( deepcopy( (data, txlist, share.get('blkdata', None), workMerkleTree, share, wld) ) )
+		mutable = getattr(workMerkleTree, 'upstreamMutable', ())
 		if not moden:
-			payload = assembleBlock(data, txlist)
+			payload = assembleBlock(data, txlist, mutable)
 		else:
 			payload = share['data']
 			if len(othertxndata):
 				payload += share['blkdata']
 			else:
-				payload += assembleBlock(data, txlist)[80:]
+				payload += assembleBlock(data, txlist, mutable)[80:]
 		if isBlock:
 			logfunc('Real block payload: %s' % (b2a_hex(payload).decode('utf8'),))
 			RBPs.append(payload)

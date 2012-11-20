@@ -42,11 +42,14 @@ def MakeBlockHeader(MRD):
 	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
-def assembleBlock(blkhdr, txlist):
+def assembleBlock(blkhdr, txlist, mutable=()):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
-	for tx in txlist:
-		payload += tx.data
+	if 'submit/coinbase' in mutable:
+		payload += txlist[0].data
+	else:
+		for tx in txlist:
+			payload += tx.data
 	return payload
 
 def _CopyMTAttrs(dest, src):
@@ -69,6 +72,7 @@ class merkleMaker(threading.Thread):
 		'coinbase/append',
 		'coinbase',
 		'generation',
+		'submit/coinbase',
 		'time',
 		'transactions/remove',
 		'prevblock',
@@ -220,6 +224,8 @@ class merkleMaker(threading.Thread):
 			# FIXME: coinbasevalue is *not* guaranteed to exist here
 			MP['coinbasevalue'] -= fee
 		
+		MP['mutable'].discard('submit/coinbase')
+		
 		txnlist[-1:] = ()
 		txninfo[-1:] = ()
 		
@@ -272,6 +278,12 @@ class merkleMaker(threading.Thread):
 			POTMode = 0
 			if txncount != 2**int(log(txncount, 2)):
 				self._floodWarning(now, 'No-POT', doin='Upstream does not allow transactions/remove mutation, required for POT mode')
+		if POTMode == 1 and 'submit/coinbase' in MP['mutable']:
+			# TODO: Reenable when we detect proposal support
+			# TODO: Allow overriding for high-bandwidth links (localhost)?
+			POTMode = 0
+			if txncount != 2**int(log(txncount, 2)):
+				self._floodWarning(now, 'No-POT', doin='Disabling non-aggressive POT mode to reduce bandwidth')
 		if POTMode > 1 and 'generation' not in MP['mutable'] and 'coinbasetxn' in MP:
 			POTMode = 1
 			if txncount != 2**int(log(txncount, 2)):
@@ -310,6 +322,8 @@ class merkleMaker(threading.Thread):
 			pot -= 1
 			txnlist[pot:] = ()
 			txninfo[pot:] = ()
+			if pot != txncount:
+				MP['mutable'].discard('submit/coinbase')
 	
 	# This is quite long, but basically it just defines the time limits for a job...
 	def _figureTimeRules(self, MP, newMerkleTree):
@@ -449,6 +463,7 @@ class merkleMaker(threading.Thread):
 				MP['mutable'] = ('time', 'transactions', 'prevblock')
 			else:
 				MP['mutable'] = ()
+		MP['mutable'] = set(MP['mutable'])
 		mutable = MP['mutable']
 		
 		self._makeBlockSafe(MP, txnlist, txninfo)
@@ -516,6 +531,8 @@ class merkleMaker(threading.Thread):
 		else:
 			newMerkleTree.upstreamTarget = Bits2Target(bits)
 		
+		newMerkleTree.upstreamMutable = mutable
+		
 		self._figureTimeRules(MP, newMerkleTree)
 		
 		haveUpdate = newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot()
@@ -534,7 +551,7 @@ class merkleMaker(threading.Thread):
 				merkleRoot = newMerkleTree.merkleRoot()
 				MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
 				blkhdr = MakeBlockHeader(MRD)
-				data = assembleBlock(blkhdr, txnlist)
+				data = assembleBlock(blkhdr, txnlist, mutable)
 				propose = self.access.getblocktemplate({
 					"mode": "proposal",
 					"data": b2a_hex(data).decode('utf8'),
@@ -863,7 +880,7 @@ def _test():
 	from copy import deepcopy
 	MP = {
 		'coinbasevalue':50,
-		'mutable':[],
+		'mutable':set(),
 		'txrequired':0,
 	}
 	txnlist = [b'\0', b'\x01', b'\x02']
@@ -883,7 +900,7 @@ def _test():
 		return m
 	MM.POT = 0
 	MBS(2)  # Can't remove transactions
-	MP['mutable'].append('transactions')
+	MP['mutable'].add('transactions')
 	assert MBS() == (MP, txnlist[:2], txninfo[:2])
 	txninfo[2]['fee'] = 1
 	MPx = deepcopy(MP)
@@ -898,7 +915,7 @@ def _test():
 	txninfo[2]['sigops'] = 10001
 	MP['coinbasetxn'] = b''
 	MBS(2)  # Can't change generation
-	MP['mutable'].append('generation')
+	MP['mutable'].add('generation')
 	MPx = deepcopy(MP)
 	MPx['coinbasevalue'] -= 1
 	assert MBS(1) == (MPx, txnlist[:2], txninfo[:2])
