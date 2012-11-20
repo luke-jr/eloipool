@@ -65,12 +65,18 @@ class _getblocktemplate:
 			txno['data'] = b2a_hex(txn.data).decode('ascii')
 			tl.append(txno)
 		rv['transactions'] = tl
+		
 		now = int(time())
-		rv['time'] = now
-		# FIXME: ensure mintime is always >= real mintime, both here and in share acceptance
-		rv['mintime'] = now - 180
+		expires = rv['expires'] = min(120, merkleTree.jobExpire - now)
+		now += merkleTree.timeOffset
 		rv['curtime'] = now
-		rv['maxtime'] = now + 120
+		rv['mintimeoff'] = mintimeoff = max(-300, merkleTree.mintimeOffset) + 10
+		if now + mintimeoff < merkleTree.mintime:
+			rv['mintime'] = merkleTree.mintime
+		rv['maxtimeoff'] = maxtimeoff = min(7200, merkleTree.maxtimeOffset)
+		if now + maxtimeoff + expires > merkleTree.maxtime:
+			rv['maxtime'] = merkleTree.maxtime
+		
 		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
 		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])
