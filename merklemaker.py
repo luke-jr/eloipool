@@ -576,16 +576,18 @@ class merkleMaker(threading.Thread):
 		for v in self.CoinbaseAux.values():
 			if v not in pfx:
 				rv += v
-		if len(rv) > 95:
+		encheight = bitcoin.script.encodeUNum(height)
+		if rv[:len(encheight)] != encheight:
+			rv = encheight + rv
+		if len(rv) > 100:
 			t = time()
 			if self.overflowed < t - 300:
 				self.logger.warning('Overflowing coinbase data! %d bytes long' % (len(rv),))
 				self.overflowed = t
 				self.isOverflowed = True
-			rv = rv[:95]
+			rv = rv[:100]
 		else:
 			self.isOverflowed = False
-		rv = bitcoin.script.encodeUNum(height) + rv
 		return rv
 	
 	def makeMerkleRoot(self, merkleTree, height):
