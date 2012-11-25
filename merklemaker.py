@@ -113,7 +113,9 @@ class merkleMaker(threading.Thread):
 				self.logger.warning('New block: %s (height %d; bits: UNKNOWN)' % (b2a_hex(newBlock[::-1]).decode('utf8'), height))
 				# Pretend to be 1 lower height, so we possibly retain nextMerkleRoots
 				self.currentBlock = (None, height - 1, None)
-				self.clearMerkleRoots = Queue(0)
+				OCMR = self.clearMerkleRoots
+				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+				OCMR.put(None)
 				self.merkleRoots.clear()
 				return
 			else:
@@ -125,6 +127,7 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (newBlock, height, bits)
 		
 		if self.currentBlock[1] != height:
+			OCMR = self.clearMerkleRoots
 			if self.currentBlock[1] == height - 1:
 				self.clearMerkleRoots = self.nextMerkleRoots
 				self.logger.debug('Adopting next-height clear merkleroots :)')
@@ -132,6 +135,7 @@ class merkleMaker(threading.Thread):
 				if self.currentBlock[1]:
 					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
+			OCMR.put(None)
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
 			self.logger.debug('Already using clear merkleroots for this height')
@@ -440,7 +444,9 @@ class merkleMaker(threading.Thread):
 			qsz = self.clearMerkleRoots.qsize()
 			if qsz < 0x10:
 				self.logger.warning('clearMerkleRoots running out! only %d left' % (qsz,))
-			MRD = self.clearMerkleRoots.get()
+			MRD = None
+			while MRD is None:
+				MRD = self.clearMerkleRoots.get()
 			self.LowestClearMerkleRoots = min(self.clearMerkleRoots.qsize(), self.LowestClearMerkleRoots)
 			rollPrevBlk = True
 		(merkleRoot, merkleTree, cb) = MRD
