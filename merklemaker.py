@@ -115,7 +115,8 @@ class merkleMaker(threading.Thread):
 				self.currentBlock = (None, height - 1, None)
 				OCMR = self.clearMerkleRoots
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
-				OCMR.put(None)
+				if OCMR.empty():
+					OCMR.put(None)
 				self.merkleRoots.clear()
 				return
 			else:
@@ -135,7 +136,8 @@ class merkleMaker(threading.Thread):
 				if self.currentBlock[1]:
 					self.logger.warning('Change from height %d->%d; no longpoll merkleroots available!' % (self.currentBlock[1], height))
 				self.clearMerkleRoots = Queue(self.WorkQueueSizeClear[1])
-			OCMR.put(None)
+			if OCMR.empty():
+				OCMR.put(None)
 			self.nextMerkleRoots = Queue(self._MaxClearSize)
 		else:
 			self.logger.debug('Already using clear merkleroots for this height')
