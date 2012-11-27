@@ -373,6 +373,16 @@ def buildStratumData(share, merkleroot):
 	share['data'] = data
 	return data
 
+def IsJobValid(wli, wluser = None):
+	if wluser not in workLog:
+		return False
+	if wli not in workLog[wluser]:
+		return False
+	(wld, issueT) = workLog[wluser][wli]
+	if time() < issueT - 120:
+		return False
+	return True
+
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
@@ -810,6 +820,7 @@ if __name__ == "__main__":
 	stratumsrv.receiveShare = receiveShare
 	stratumsrv.getTarget = getTarget
 	stratumsrv.defaultTarget = config.ShareTarget
+	stratumsrv.IsJobValid = IsJobValid
 	if not hasattr(config, 'StratumAddresses'):
 		config.StratumAddresses = ()
 	for a in config.StratumAddresses:

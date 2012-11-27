@@ -245,7 +245,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 				'00000002',
 				b2a_hex(bits[::-1]).decode('ascii'),
 				b2a_hex(struct.pack('>L', int(time()))).decode('ascii'),
-				False
+				not self.IsJobValid(self.JobId)
 			],
 		}).encode('ascii') + b"\n"
 		self.JobId = JobId
