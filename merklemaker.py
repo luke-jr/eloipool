@@ -429,25 +429,31 @@ class merkleMaker(threading.Thread):
 			logf = self.logger.warning
 		logf(wmsgf() if wmsgf else doin)
 	
-	def _makeOne(self, putf, merkleTree, height):
+	def _makeOne(self, putf, merkleTree, height, checkBlock):
 		MT = self.currentMerkleTree
-		height = self.currentBlock[1]
+		myblock = self.currentBlock
 		MR = self.makeMerkleRoot(MT, height=height)
-		# Only add it if the height hasn't changed in the meantime, to avoid a race
-		if self.currentBlock[1] == height:
-			putf(MR)
+		if checkBlock:
+			# Only add it if the block hasn't changed in the meantime, to avoid a race
+			if self.currentBlock != myblock:
+				return
+		else:
+			# Only add it if the height hasn't changed in the meantime, to avoid a race
+			if self.currentBlock[1] != height:
+				return
+		putf(MR)
 	
 	def makeClear(self):
 		self._doing('clear merkle roots')
-		self._makeOne(self.clearMerkleRoots.put, self.curClearMerkleTree, height=self.currentBlock[1])
+		self._makeOne(self.clearMerkleRoots.put, self.curClearMerkleTree, height=self.currentBlock[1], False)
 	
 	def makeNext(self):
 		self._doing('longpoll merkle roots')
-		self._makeOne(self.nextMerkleRoots.put, self.nextMerkleTree, height=self.currentBlock[1] + 1)
+		self._makeOne(self.nextMerkleRoots.put, self.nextMerkleTree, height=self.currentBlock[1] + 1, False)
 	
 	def makeRegular(self):
 		self._doing('regular merkle roots')
-		self._makeOne(self.merkleRoots.append, self.currentMerkleTree, height=self.currentBlock[1])
+		self._makeOne(self.merkleRoots.append, self.currentMerkleTree, height=self.currentBlock[1], True)
 	
 	def merkleMaker_II(self):
 		global now
