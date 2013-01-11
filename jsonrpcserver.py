@@ -202,7 +202,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			self._LPCall = (reqid, method, params)
 			raise
 		except Exception as e:
-			self.logger.error(("Error during JSON-RPC call: %s%s\n" % (method, params)) + traceback.format_exc())
+			self.logger.error(("Error during JSON-RPC call (UA=%s, IP=%s): %s%s\n" % (self.reqinfo.get('UA'), self.remoteHost, method, params)) + traceback.format_exc())
 			efun = self.fmtError if longpoll else self.doError
 			return efun(r'Service error: %s' % (e,))
 		try:
