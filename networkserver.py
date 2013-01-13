@@ -173,6 +173,7 @@ class SocketHandler:
 	
 	def boot(self):
 		self.close()
+		self.ac_in_buffer = b''
 	
 	def changeTask(self, f, t = None):
 		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
