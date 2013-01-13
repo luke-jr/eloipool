@@ -62,7 +62,11 @@ class StratumHandler(networkserver.SocketHandler):
 		if not inbuf:
 			return
 		
-		rpc = json.loads(inbuf)
+		try:
+			rpc = json.loads(inbuf)
+		except ValueError:
+			self.close()
+			return
 		funcname = '_stratum_%s' % (rpc['method'].replace('.', '_'),)
 		if not hasattr(self, funcname):
 			self.sendReply({
