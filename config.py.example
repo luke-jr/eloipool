@@ -67,6 +67,8 @@ DelayLogForUpstream = False
 UpstreamBitcoindNode = ('127.0.0.1', 18333)  # testnet
 
 # Network ID for the primary blockchain
+# Other known network IDs can be found at:
+#     https://en.bitcoin.it/wiki/Protocol_specification#Message_structure
 UpstreamNetworkId = b'\xFA\xBF\xB5\xDA'  # testnet
 
 # Secret username allowed to use setworkaux
