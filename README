@@ -29,3 +29,17 @@ Optional Dependencies
 midstate			http://gitorious.org/midstate/midstate
 Psycopg2			http://initd.org/psycopg/
 PyMySQL				http://www.pymysql.org/
+
+
+Merged Mining
+-------------
+Eloipool supports merged mining using the setworkaux/gotwork RPC interface.
+A simple port of namecoin's merged-mine-proxy to this interface is available
+here:
+	https://gitorious.org/~Luke-Jr/bitcoin/luke-jr-bitcoin/blobs/namecoin_mmm/contrib/merged-mine-proxy
+Please be advised that:
+- Eloipool does not provide any interface for longpolling aux chains.
+- Empty and longpoll merkle roots are generated only as-needed, and will NOT be
+  regenerated when CoinbaseAux changes. This means shares found by getwork
+  miners after a longpoll will almost always be stale on your aux chain(s).
+  This problem does not affect GBT or stratum miners.
