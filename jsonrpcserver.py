@@ -45,7 +45,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def final_init(server):
 		pass
 	
-	def sendReply(self, status=200, body=b'', headers=None):
+	def sendReply(self, status=200, body=b'', headers=None, *a, **ka):
 		headers = dict(headers) if headers else {}
 		if body and body[0] == 123:  # b'{'
 			headers.setdefault('Content-Type', 'application/json')
@@ -53,7 +53,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			if not body:
 				headers.setdefault('Content-Type', 'application/json')
 			headers.setdefault('X-Long-Polling', '/LP')
-		return super().sendReply(status, body, headers)
+		return super().sendReply(status, body, headers, *a, **ka)
 	
 	def fmtError(self, reason = '', code = 100):
 		reason = json.dumps(reason)
@@ -187,7 +187,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 			return
 		
 		try:
-			self.sendReply(200, body=rv, headers=self.LPHeaders)
+			self.sendReply(200, body=rv, headers=self.LPHeaders, tryCompression=False)
 			raise httpserver.RequestNotHandled
 		except httpserver.RequestHandled:
 			# Expected

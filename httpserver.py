@@ -73,7 +73,7 @@ class HTTPHandler(networkserver.SocketHandler):
 	
 	default_quirks = {}
 	
-	def sendReply(self, status=200, body=b'', headers=None):
+	def sendReply(self, status=200, body=b'', headers=None, tryCompression=True):
 		if self.replySent:
 			raise RequestAlreadyHandled
 		buf = "HTTP/1.1 %d %s\r\n" % (status, self.HTTPStatus.get(status, 'Unknown'))
@@ -85,7 +85,7 @@ class HTTPHandler(networkserver.SocketHandler):
 		if body is None:
 			headers.setdefault('Transfer-Encoding', 'chunked')
 		else:
-			if 'gzip' in self.quirks:
+			if tryCompression and 'gzip' in self.quirks:
 				headers['Content-Encoding'] = 'gzip'
 				headers['Vary'] = 'Content-Encoding'
 				gz = io.BytesIO()
