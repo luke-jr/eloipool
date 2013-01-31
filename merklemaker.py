@@ -47,7 +47,6 @@ def assembleBlock(blkhdr, txlist):
 	return payload
 
 class merkleMaker(threading.Thread):
-	OldGMP = None
 	GBTCaps = [
 		'coinbasevalue',
 		'coinbase/append',
@@ -80,7 +79,9 @@ class merkleMaker(threading.Thread):
 	def addSource(self, nick, uri):
 		if hasattr(self, 'access'):
 			raise NotImplementedError('Only one source supported for now')
-		self.access = jsonrpc.ServiceProxy(uri)
+		sp = jsonrpc.ServiceProxy(uri)
+		sp.OldGMP = None
+		self.access = sp
 	
 	def _prepare(self):
 		self.addSource('primary', self.UpstreamURI)
@@ -269,23 +270,19 @@ class merkleMaker(threading.Thread):
 			txnlist[pot:] = ()
 			txninfo[pot:] = ()
 	
-	def updateMerkleTree(self):
-		global now
-		self.logger.debug('Polling bitcoind for memorypool')
-		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
-		
+	def _CallGBT(self, access):
 		try:
 			# First, try BIP 22 standard getblocktemplate :)
-			MP = self.access.getblocktemplate(self.GBTReq)
-			self.OldGMP = False
+			MP = access.getblocktemplate(self.GBTReq)
+			access.OldGMP = False
 		except:
 			try:
 				# Failing that, give BIP 22 draft (2012-02 through 2012-07) getmemorypool a chance
-				MP = self.access.getmemorypool(self.GMPReq)
+				MP = access.getmemorypool(self.GMPReq)
 			except:
 				try:
 					# Finally, fall back to bitcoind 0.5/0.6 getmemorypool
-					MP = self.access.getmemorypool()
+					MP = access.getmemorypool()
 				except:
 					MP = False
 			if MP is False:
@@ -293,8 +290,8 @@ class merkleMaker(threading.Thread):
 				raise
 			
 			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
-			if not self.OldGMP:
-				self.OldGMP = True
+			if not access.OldGMP:
+				access.OldGMP = True
 				self.logger.warning('Upstream server is not BIP 22 compatible')
 		
 		oMP = deepcopy(MP)
@@ -334,11 +331,23 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
+		
+		newMerkleTree.POTInfo = MP.get('POTInfo')
+		newMerkleTree.oMP = oMP
+		
+		return newMerkleTree
+	
+	def updateMerkleTree(self):
+		global now
+		self.logger.debug('Polling bitcoind for memorypool')
+		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
+		
+		newMerkleTree = self._CallGBT(self.access)
+		
 		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
-			newMerkleTree.POTInfo = MP.get('POTInfo')
-			newMerkleTree.oMP = oMP
-			
-			if (not self.OldGMP) and 'proposal' in MP.get('capabilities', ()):
+			if 'proposal' in newMerkleTree.oMP.get('capabilities', ()):
+				txnlist = newMerkleTree.data
+				cbtxn = txnlist[0]
 				(prevBlock, height, bits) = self.currentBlock
 				coinbase = self.makeCoinbase(height=height)
 				cbtxn.setCoinbase(coinbase)
