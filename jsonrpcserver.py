@@ -344,6 +344,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		now = time()
 		
 		for ic in C:
+			self.lastHandler = ic
 			try:
 				ic.wakeLongpoll(self._LPWantClear)
 			except socket.error:
