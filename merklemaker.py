@@ -354,11 +354,10 @@ class merkleMaker(threading.Thread):
 		logf(wmsgf() if wmsgf else doin)
 	
 	def _makeOne(self, putf, merkleTree, height):
-		MT = self.currentMerkleTree
-		height = self.currentBlock[1]
-		MR = self.makeMerkleRoot(MT, height=height)
+		MakingAtThisHeight = self.currentBlock[1]
+		MR = self.makeMerkleRoot(merkleTree, height=height)
 		# Only add it if the height hasn't changed in the meantime, to avoid a race
-		if self.currentBlock[1] == height:
+		if self.currentBlock[1] == MakingAtThisHeight:
 			putf(MR)
 	
 	def makeClear(self):
