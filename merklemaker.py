@@ -77,8 +77,13 @@ class merkleMaker(threading.Thread):
 		self.overflowed = 0
 		self.DifficultyChangeMod = 2016
 	
+	def addSource(self, nick, uri):
+		if hasattr(self, 'access'):
+			raise NotImplementedError('Only one source supported for now')
+		self.access = jsonrpc.ServiceProxy(uri)
+	
 	def _prepare(self):
-		self.access = jsonrpc.ServiceProxy(self.UpstreamURI)
+		self.addSource('primary', self.UpstreamURI)
 		
 		self.ready = False
 		self.readyCV = threading.Condition()
