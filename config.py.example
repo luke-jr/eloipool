@@ -52,11 +52,57 @@ CoinbaserCmd = 'echo -e "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU"
 
 ### Settings relating to upstream data providers
 
-# JSON-RPC server for getmemorypool
-UpstreamURI = 'http://user:pass@localhost:18332'
+# JSON-RPC servers to get block templates from
+# See https://en.bitcoin.it/wiki/BIP_0023#Logical_Services for key details
+TemplateSources = (
+	{
+		'name': 'primary',
+		'uri': 'http://user:pass@localhost:8332',
+		'priority': 0,
+		'weight': 1,
+	},
+	{
+		'name': 'secondary',
+		'uri': 'http://user:pass@localhost:18332',
+		'priority': 1,
+		'weight': 1,
+	},
+)
+
+# JSON-RPC servers to check block proposals with
+# If none provided, and selected source supports proposals, it alone will also
+# be used for checking
+TemplateChecks = (
+	{
+		'name': 'primary',
+		'uri': 'http://user:pass@localhost:8332',
+		
+		# If 'unanimous' is true, no template will be used if this node
+		# rejects it
+		'unanimous': False,
+		
+		# If check servers disagree on all templates, they will be scored and
+		# the highest score will be used; 'weight' can be used to control the
+		# scoring per-server
+		'weight': 1.1,
+	},
+	{
+		'name': 'secondary',
+		'uri': 'http://user:pass@localhost:18332',
+		'unanimous': False,
+		'weight': 1,
+	},
+)
+
+# Templates will not be used unless they have an acceptance ratio above this
+# Range: 0.00 - 1.00
+MinimumTemplateAcceptanceRatio = 0
+
+# No template with a combined total score below this will be used
+MinimumTemplateScore = 1
 
 # Set to True if you want shares meeting the upstream target to wait for a
-# response from the upstream server before logging them. Otherwise, for such
+# response from an upstream server before logging them. Otherwise, for such
 # shares, upstreamResult will always be True and upstreamRejectReason will
 # always be None. Note that enabling this may cause shares to be logged out of
 # order, or with the wrong timestamp (if your share logger uses the log-time

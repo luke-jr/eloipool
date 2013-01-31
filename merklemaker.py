@@ -26,6 +26,7 @@ import jsonrpc
 import logging
 from math import log
 from merkletree import MerkleTree
+import socket
 from struct import pack
 import threading
 from time import sleep, time
@@ -75,16 +76,43 @@ class merkleMaker(threading.Thread):
 		self.MinimumTxnUpdateWait = 5
 		self.overflowed = 0
 		self.DifficultyChangeMod = 2016
-	
-	def addSource(self, nick, uri):
-		if hasattr(self, 'access'):
-			raise NotImplementedError('Only one source supported for now')
-		sp = jsonrpc.ServiceProxy(uri)
-		sp.OldGMP = None
-		self.access = sp
+		self.MinimumTemplateAcceptanceRatio = 0
+		self.MinimumTemplateScore = 1
 	
 	def _prepare(self):
-		self.addSource('primary', self.UpstreamURI)
+		self.TemplateSources = list(getattr(self, 'TemplateSources', ()))
+		self.TemplateChecks = list(getattr(self, 'TemplateChecks', ()))
+		if hasattr(self, 'UpstreamURI'):
+			self.TemplateSources.append({
+				'name': 'UpstreamURI',
+				'uri': self.UpstreamURI,
+			})
+		URI2Name = {}
+		_URI2Access = {}
+		def URI2Access(uri):
+			if uri not in _URI2Access:
+				access = jsonrpc.ServiceProxy(uri)
+				access.OldGMP = False
+				_URI2Access[uri] = access
+			return _URI2Access[uri]
+		LeveledTS = {}
+		for i in range(len(self.TemplateSources)):
+			TS = self.TemplateSources[i]
+			TS.setdefault('name', 'TemplateSources[%u]' % (i,))
+			URI2Name[TS['uri']] = TS['name']
+			TS.setdefault('priority', 0)
+			TS.setdefault('weight', 1)
+			TS['access'] = URI2Access(TS['uri'])
+			LeveledTS.setdefault(TS['priority'], []).append(TS)
+		LeveledTS = tuple(x[1] for x in sorted(LeveledTS.items()))
+		self.TemplateSources = LeveledTS
+		for i in range(len(self.TemplateChecks)):
+			TC = self.TemplateChecks[i]
+			if 'name' not in TC:
+				TC['name'] = URI2Name.get(TC['uri'], 'TemplateChecks[%u]' % (i,))
+			TC.setdefault('unanimous', False)
+			TC.setdefault('weight', 1)
+			TC['access'] = URI2Access(TC['uri'])
 		
 		self.ready = False
 		self.readyCV = threading.Condition()
@@ -270,7 +298,9 @@ class merkleMaker(threading.Thread):
 			txnlist[pot:] = ()
 			txninfo[pot:] = ()
 	
-	def _CallGBT(self, access):
+	def _CallGBT(self, TS):
+		access = TS['access']
+		self.logger.debug('Requesting new template from \'%s\'' % (TS['name'],))
 		try:
 			# First, try BIP 22 standard getblocktemplate :)
 			MP = access.getblocktemplate(self.GBTReq)
@@ -292,17 +322,21 @@ class merkleMaker(threading.Thread):
 			# Pre-BIP22 server (bitcoind <0.7 or Eloipool <20120513)
 			if not access.OldGMP:
 				access.OldGMP = True
-				self.logger.warning('Upstream server is not BIP 22 compatible')
+				self.logger.warning('Upstream \'%s\' is not BIP 22 compatible' % (TS['name'],))
 		
+		return MP
+	
+	def _updateMerkleTree_fromTS(self, TS):
+		MP = self._CallGBT(TS)
 		oMP = deepcopy(MP)
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
-		if 'height' in MP:
-			height = MP['height']
-		else:
-			height = self.access.getinfo()['blocks'] + 1
+		if 'height' not in MP:
+			MP['height'] = self.access.getinfo()['blocks'] + 1
+		height = MP['height']
 		bits = bytes.fromhex(MP['bits'])[::-1]
-		if (prevBlock, height, bits) != self.currentBlock:
+		(MP['_bits'], MP['_prevBlock']) = (bits, prevBlock)
+		if (prevBlock, height, bits) != self.currentBlock and (self.currentBlock[1] is None or height > self.currentBlock[1]):
 			self.updateBlock(prevBlock, height, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		
 		txnlist = MP['transactions']
@@ -331,48 +365,128 @@ class merkleMaker(threading.Thread):
 		txnlist.insert(0, cbtxn)
 		txnlist = list(txnlist)
 		newMerkleTree = MerkleTree(txnlist)
-		
 		newMerkleTree.POTInfo = MP.get('POTInfo')
+		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
+		# TS['access'] will have problems copying, so just store name
+		newMerkleTree.source = TS['name']
 		
-		return newMerkleTree
+		TCList = self.TemplateChecks
+		if not TCList:
+			if 'proposal' not in oMP.get('capabilities', ()):
+				return (0, newMerkleTree)
+			TCList = (
+				{
+					'name': TS['name'],
+					'access': TS['access'],
+					'unanimous': True,
+					'weight': 1,
+				},
+			)
+		
+		coinbase = self.makeCoinbase(height=height)
+		cbtxn.setCoinbase(coinbase)
+		cbtxn.assemble()
+		merkleRoot = newMerkleTree.merkleRoot()
+		MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
+		blkhdr = MakeBlockHeader(MRD)
+		data = assembleBlock(blkhdr, txnlist)
+		ProposeReq = {
+			"mode": "proposal",
+			"data": b2a_hex(data).decode('utf8'),
+		}
+		
+		AcceptedScore = 0
+		RejectedScore = 0
+		Rejections = {}
+		ProposalErrors = {}
+		for TC in TCList:
+			caccess = TC['access']
+			try:
+				propose = caccess.getblocktemplate(ProposeReq)
+			except (socket.error, ValueError) as e:
+				self.logger.error('Upstream \'%s\' errored on proposal from \'%s\': %s' % (TC['name'], TS['name'], e))
+				ProposalErrors[TC['name']] = e
+				continue
+			if propose is None:
+				AcceptedScore += TC['weight']
+				self.logger.debug('Upstream \'%s\' accepted proposal' % (TC['name'],))
+			elif propose == 'orphan':
+				self.logger.debug('Upstream \'%s\' considered proposal an orphan' % (TC['name'],))
+				ProposalErrors[TC['name']] = propose
+			else:
+				RejectedScore += TC['weight']
+				Rejections[caccess.nick] = propose
+				try:
+					propose = propose['reject-reason']
+				except:
+					pass
+				self.logger.error('Upstream \'%s\' rejected proposed block from \'%s\': %s' % (TC['name'], TS['name'], propose))
+		
+		if Rejections:
+			RPInfo = {
+				'merkleTree': newMerkleTree,
+				'AcceptedScore': AcceptedScore,
+				'RejectedScore': RejectedScore,
+				'Rejections': Rejections,
+				'ProposalErrors': ProposalErrors,
+			}
+			self.RejectedProposal = RPInfo
+			# TODO: Log any rejections to a file too
+		
+		TotalScore = AcceptedScore + RejectedScore
+		AcceptRatio = AcceptedScore / TotalScore
+		
+		self.logger.debug('Template from \'%s\' has %s acceptance ratio and total score of %s' % (TS['name'], AcceptRatio, TotalScore))
+		
+		if AcceptRatio <= self.MinimumTemplateAcceptanceRatio:
+			return None
+		
+		if TotalScore < self.MinimumTemplateScore:
+			return None
+		
+		return (AcceptRatio, newMerkleTree)
+	
+	def _updateMerkleTree_I(self):
+		Best = (-1, None)
+		for TSPriList in self.TemplateSources:
+			# FIXME: Implement weighting
+			for i in range(len(TSPriList)):
+				TS = TSPriList.pop(0)
+				TSPriList.append(TS)
+				
+				try:
+					r = self._updateMerkleTree_fromTS(TS)
+					if r is None:
+						# Failed completely
+						continue
+					if Best[0] < r[0]:
+						Best = r
+						if r[0] == 1:
+							break
+				except:
+					if TSPriList == self.TemplateSources[-1] and i == len(TSPriList) - 1 and Best[1] is None:
+						raise
+					else:
+						self.logger.error(traceback.format_exc())
+		
+		BestMT = Best[1]
+		if BestMT is None:
+			raise RuntimeError('Failed to create usable template')
+		
+		self.logger.debug('Updating merkle tree with template from \'%s\'' % (BestMT.source,))
+		MP = BestMT.MP
+		blkbasics = (MP['_prevBlock'], MP['height'], MP['_bits'])
+		if blkbasics != self.currentBlock:
+			self.updateBlock(*blkbasics, _HBH=(MP['previousblockhash'], MP['bits']))
+		self.currentMerkleTree = BestMT
 	
 	def updateMerkleTree(self):
 		global now
-		self.logger.debug('Polling bitcoind for memorypool')
+		self.logger.debug('Polling for new block template')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
 		
-		newMerkleTree = self._CallGBT(self.access)
-		
-		if newMerkleTree.merkleRoot() != self.currentMerkleTree.merkleRoot():
-			if 'proposal' in newMerkleTree.oMP.get('capabilities', ()):
-				txnlist = newMerkleTree.data
-				cbtxn = txnlist[0]
-				(prevBlock, height, bits) = self.currentBlock
-				coinbase = self.makeCoinbase(height=height)
-				cbtxn.setCoinbase(coinbase)
-				cbtxn.assemble()
-				merkleRoot = newMerkleTree.merkleRoot()
-				MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
-				blkhdr = MakeBlockHeader(MRD)
-				data = assembleBlock(blkhdr, txnlist)
-				propose = self.access.getblocktemplate({
-					"mode": "proposal",
-					"data": b2a_hex(data).decode('utf8'),
-				})
-				if propose is None:
-					self.logger.debug('Updating merkle tree (upstream accepted proposal)')
-					self.currentMerkleTree = newMerkleTree
-				else:
-					self.RejectedProposal = (newMerkleTree, propose)
-					try:
-						propose = propose['reject-reason']
-					except:
-						pass
-					self.logger.error('Upstream rejected proposed block: %s' % (propose,))
-			else:
-				self.logger.debug('Updating merkle tree (no proposal support)')
-				self.currentMerkleTree = newMerkleTree
+		self._updateMerkleTree_I()
 		
 		self.lastMerkleUpdate = now
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
