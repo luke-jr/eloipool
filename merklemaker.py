@@ -368,8 +368,9 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
-		# TS['access'] will have problems copying, so just store name
+		# Some versions of bitcoinrpc ServiceProxy have problems copying/pickling, so just store name and URI for now
 		newMerkleTree.source = TS['name']
+		newMerkleTree.source_uri = TS['uri']
 		
 		TCList = self.TemplateChecks
 		if not TCList:
@@ -437,7 +438,7 @@ class merkleMaker(threading.Thread):
 		TotalScore = AcceptedScore + RejectedScore
 		AcceptRatio = AcceptedScore / TotalScore
 		
-		self.logger.debug('Template from \'%s\' has %s acceptance ratio and total score of %s' % (TS['name'], AcceptRatio, TotalScore))
+		self.logger.debug('Template from \'%s\' has %s acceptance ratio and score of %s' % (TS['name'], AcceptRatio, AcceptedScore))
 		
 		if AcceptRatio <= self.MinimumTemplateAcceptanceRatio:
 			return None

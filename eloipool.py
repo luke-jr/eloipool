@@ -44,8 +44,6 @@ bcnode = BitcoinNode(config.UpstreamNetworkId)
 bcnode.userAgent += b'Eloipool:0.1/'
 
 import jsonrpc
-UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(config.UpstreamURI)
-
 
 try:
 	import jsonrpc.authproxy
@@ -296,6 +294,11 @@ from merklemaker import assembleBlock
 
 RBFs = []
 def blockSubmissionThread(payload, blkhash, share):
+	if not hasattr(share['merkletree'], 'source_uri'):
+		# Clear merkleroots have no source, pick the first source for now
+		share['merkletree'].source = MM.TemplateSources[0][-1]['name']
+		share['merkletree'].source_uri = MM.TemplateSources[0][-1]['uri']
+	UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(share['merkletree'].source_uri)
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
@@ -327,7 +330,7 @@ def blockSubmissionThread(payload, blkhash, share):
 				nexterr = now + 5
 			if MM.currentBlock[0] not in myblock:
 				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
-				RaiseRedFlags('Giving up on submitting block upstream')
+				RaiseRedFlags('Giving up on submitting block to upstream \'%s\'' % (share['merkletree'].source,))
 				if share['upstreamRejectReason'] is PendingUpstream:
 					share['upstreamRejectReason'] = 'GAVE UP'
 					share['upstreamResult'] = False
@@ -336,11 +339,14 @@ def blockSubmissionThread(payload, blkhash, share):
 	if reason:
 		# FIXME: The returned value could be a list of multiple responses
 		RBFs.append( (('upstream reject', reason, time()), payload, blkhash, share) )
-		RaiseRedFlags('Upstream block submission failed: %s' % (reason,))
+		RaiseRedFlags('Upstream \'%s\' block submission failed: %s' % (share['merkletree'].source, reason,))
+	else:
+		blockSubmissionThread.logger.debug('Upstream \'%s\' accepted block' % (share['merkletree'].source,))
 	if share['upstreamRejectReason'] is PendingUpstream:
 		share['upstreamRejectReason'] = reason
 		share['upstreamResult'] = not reason
 		logShare(share)
+blockSubmissionThread.logger = logging.getLogger('blockSubmission')
 
 def checkData(share):
 	data = share['data']
@@ -430,6 +436,7 @@ def checkShare(share):
 	share['issuetime'] = issueT
 	
 	(workMerkleTree, workCoinbase) = wld[1:3]
+	share['merkletree'] = workMerkleTree
 	if 'jobid' in share:
 		cbtxn = deepcopy(workMerkleTree.data[0])
 		coinbase = workCoinbase + share['extranonce1'] + share['extranonce2']
