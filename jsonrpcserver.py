@@ -220,7 +220,10 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	
 	def doJSON(self, data, longpoll = False):
 		# TODO: handle JSON errors
-		data = data.decode('utf8')
+		try:
+			data = data.decode('utf8')
+		except UnicodeDecodeError as e:
+			return self.doError(str(e))
 		if longpoll and not data:
 			self.JSONRPCId = jsonid = 1
 			self.JSONRPCMethod = 'getwork'
