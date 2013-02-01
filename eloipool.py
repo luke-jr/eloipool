@@ -299,7 +299,6 @@ def blockSubmissionThread(payload, blkhash, share):
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
-	gmperr = None
 	while True:
 		try:
 			# BIP 22 standard submitblock
@@ -327,12 +326,14 @@ def blockSubmissionThread(payload, blkhash, share):
 				nexterr = now + 5
 			if MM.currentBlock[0] not in myblock:
 				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
+				del gmperr
 				RaiseRedFlags('Giving up on submitting block upstream')
 				if share['upstreamRejectReason'] is PendingUpstream:
 					share['upstreamRejectReason'] = 'GAVE UP'
 					share['upstreamResult'] = False
 					logShare(share)
 				return
+			del gmperr
 	if reason:
 		# FIXME: The returned value could be a list of multiple responses
 		RBFs.append( (('upstream reject', reason, time()), payload, blkhash, share) )
