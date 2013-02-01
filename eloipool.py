@@ -295,21 +295,27 @@ from merklemaker import assembleBlock
 
 RBFs = []
 def blockSubmissionThread(payload, blkhash, share):
-	if not hasattr(share['merkletree'], 'source_uri'):
-		# Clear merkleroots have no source, pick the first source for now
-		share['merkletree'].source = MM.TemplateSources[0][-1]['name']
-		share['merkletree'].source_uri = MM.TemplateSources[0][-1]['uri']
-	UpstreamBitcoindJSONRPC = jsonrpc.ServiceProxy(share['merkletree'].source_uri)
+	servers = list(a for b in MM.TemplateSources for a in b)
+	if hasattr(share['merkletree'], 'source_uri'):
+		servers.insert(0, {
+			'access': jsonrpc.ServiceProxy(share['merkletree'].source_uri),
+			'name': share['merkletree'].source,
+		})
+	
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
-	gmperr = None
-	while True:
+	tries = 0
+	success = False
+	while len(servers):
+		tries += 1
+		TS = servers.pop(0)
+		UpstreamBitcoindJSONRPC = TS['access']
 		try:
 			# BIP 22 standard submitblock
 			reason = UpstreamBitcoindJSONRPC.submitblock(payload)
-			break
 		except BaseException as gbterr:
+			gbterr_fmt = traceback.format_exc()
 			try:
 				try:
 					# bitcoind 0.5/0.6 getmemorypool
@@ -321,32 +327,41 @@ def blockSubmissionThread(payload, blkhash, share):
 					reason = None
 				elif reason is False:
 					reason = 'rejected'
-				break
-			except BaseException as e2:
-				gmperr = e2
-			now = time()
-			if now > nexterr:
-				# FIXME: This will show "Method not found" on pre-BIP22 servers
-				RaiseRedFlags(traceback.format_exc())
-				nexterr = now + 5
-			if MM.currentBlock[0] not in myblock:
-				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
-				RaiseRedFlags('Giving up on submitting block to upstream \'%s\'' % (share['merkletree'].source,))
-				if share['upstreamRejectReason'] is PendingUpstream:
-					share['upstreamRejectReason'] = 'GAVE UP'
-					share['upstreamResult'] = False
-					logShare(share)
-				return
-	if reason:
-		# FIXME: The returned value could be a list of multiple responses
-		RBFs.append( (('upstream reject', reason, time()), payload, blkhash, share) )
-		RaiseRedFlags('Upstream \'%s\' block submission failed: %s' % (share['merkletree'].source, reason,))
-	else:
-		blockSubmissionThread.logger.debug('Upstream \'%s\' accepted block' % (share['merkletree'].source,))
-	if share['upstreamRejectReason'] is PendingUpstream:
-		share['upstreamRejectReason'] = reason
-		share['upstreamResult'] = not reason
-		logShare(share)
+			except BaseException as gmperr:
+				now = time()
+				if now > nexterr:
+					# FIXME: This will show "Method not found" on pre-BIP22 servers
+					RaiseRedFlags(gbterr_fmt)
+					nexterr = now + 5
+				if MM.currentBlock[0] not in myblock and tries > len(servers):
+					RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
+					RaiseRedFlags('Giving up on submitting block to upstream \'%s\'' % (TS['name'],))
+					if share['upstreamRejectReason'] is PendingUpstream:
+						share['upstreamRejectReason'] = 'GAVE UP'
+						share['upstreamResult'] = False
+						logShare(share)
+					return
+				
+				servers.append(UpstreamBitcoindJSONRPC)
+				continue
+		
+		# At this point, we have a reason back
+		if reason:
+			# FIXME: The returned value could be a list of multiple responses
+			msg = 'Upstream \'%s\' block submission failed: %s' % (TS['name'], reason,)
+			if success and reason in ('stale-prevblk', 'bad-prevblk', 'orphan', 'duplicate'):
+				# no big deal
+				blockSubmissionThread.logger.debug(msg)
+			else:
+				RBFs.append( (('upstream reject', reason, time()), payload, blkhash, share) )
+				RaiseRedFlags(msg)
+		else:
+			blockSubmissionThread.logger.debug('Upstream \'%s\' accepted block' % (TS['name'],))
+			success = True
+		if share['upstreamRejectReason'] is PendingUpstream:
+			share['upstreamRejectReason'] = reason
+			share['upstreamResult'] = not reason
+			logShare(share)
 blockSubmissionThread.logger = logging.getLogger('blockSubmission')
 
 def checkData(share):
