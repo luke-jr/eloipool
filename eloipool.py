@@ -253,7 +253,6 @@ def blockSubmissionThread(payload, blkhash, share):
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
 	nexterr = 0
-	gmperr = None
 	while True:
 		try:
 			rv = UpstreamBitcoindJSONRPC.submitblock(payload)
@@ -275,8 +274,10 @@ def blockSubmissionThread(payload, blkhash, share):
 				nexterr = now + 5
 			if MM.currentBlock[0] not in myblock:
 				RBFs.append( (('next block', MM.currentBlock, now, (gbterr, gmperr)), payload, blkhash, share) )
+				del gmperr
 				RaiseRedFlags('Giving up on submitting block upstream')
 				return
+			del gmperr
 	if rv:
 		# FIXME: The returned value could be a list of multiple responses
 		RBFs.append( (('upstream reject', rv, now), payload, blkhash, share) )
