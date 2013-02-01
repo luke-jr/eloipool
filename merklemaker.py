@@ -125,6 +125,9 @@ class merkleMaker(threading.Thread):
 					b2a_hex(self.currentBlock[2][::-1]).decode('utf8'),
 					b2a_hex(bits[::-1]).decode('utf8'),
 				))
+				if self.needMerkle == 1:
+					self.needMerkle = False
+				self.onBlockUpdate()
 		
 		# Old block is invalid
 		if self.currentBlock[0] != newBlock:
