@@ -33,6 +33,7 @@ from time import sleep, time
 import traceback
 
 _makeCoinbase = [0, 0]
+_filecounter = 0
 
 def MakeBlockHeader(MRD):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
@@ -417,7 +418,7 @@ class merkleMaker(threading.Thread):
 				ProposalErrors[TC['name']] = propose
 			else:
 				RejectedScore += TC['weight']
-				Rejections[caccess.nick] = propose
+				Rejections[TC['name']] = propose
 				try:
 					propose = propose['reject-reason']
 				except:
@@ -433,7 +434,15 @@ class merkleMaker(threading.Thread):
 				'ProposalErrors': ProposalErrors,
 			}
 			self.RejectedProposal = RPInfo
-			# TODO: Log any rejections to a file too
+			
+			try:
+				global _filecounter
+				_filecounter += 1
+				import pickle
+				with open('RejectedProposals/%d_%d' % (int(time()), _filecounter), 'wb') as f:
+					pickle.dump(RPInfo, f)
+			except IOError:
+				pass
 		
 		TotalScore = AcceptedScore + RejectedScore
 		AcceptRatio = AcceptedScore / TotalScore
