@@ -106,16 +106,17 @@ def updateBlocks():
 	stratumsrv.updateJob()
 
 def blockChanged():
-	global DupeShareHACK
-	DupeShareHACK = {}
-	jsonrpc_getwork._CheckForDupesHACK = {}
 	global MM, networkTarget, server
 	bits = MM.currentBlock[2]
 	if bits is None:
 		networkTarget = None
 	else:
 		networkTarget = Bits2Target(bits)
-	workLog.clear()
+	if MM.lastBlock != (None, None, None):
+		global DupeShareHACK
+		DupeShareHACK = {}
+		jsonrpc_getwork._CheckForDupesHACK = {}
+		workLog.clear()
 	server.wakeLongpoll(wantClear=True)
 	stratumsrv.updateJob(wantClear=True)
 
