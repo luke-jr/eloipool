@@ -89,6 +89,17 @@ class merkleMaker(threading.Thread):
 				'uri': self.UpstreamURI,
 			})
 		URI2Name = {}
+		Name2URI = {}
+		for a in (self.TemplateSources + self.TemplateChecks + list(self.BlockSubmissions)):
+			if not ('name' in a and 'uri' in a):
+				continue
+			URI2Name.setdefault(a['uri'], a['name'])
+			Name2URI.setdefault(a['name'], a['uri'])
+		def URINamePair(a, defname):
+			if 'name' not in a:
+				a['name'] = URI2Name.get(a['uri'], defname)
+			elif 'uri' not in a:
+				a['uri'] = Name2URI[a['name']]
 		_URI2Access = {}
 		def URI2Access(uri):
 			if uri not in _URI2Access:
@@ -99,8 +110,7 @@ class merkleMaker(threading.Thread):
 		LeveledTS = {}
 		for i in range(len(self.TemplateSources)):
 			TS = self.TemplateSources[i]
-			TS.setdefault('name', 'TemplateSources[%u]' % (i,))
-			URI2Name[TS['uri']] = TS['name']
+			URINamePair(TS, 'TemplateSources[%u]' % (i,))
 			TS.setdefault('priority', 0)
 			TS.setdefault('weight', 1)
 			TS['access'] = URI2Access(TS['uri'])
@@ -109,17 +119,13 @@ class merkleMaker(threading.Thread):
 		self.TemplateSources = LeveledTS
 		for i in range(len(self.TemplateChecks)):
 			TC = self.TemplateChecks[i]
-			if 'name' not in TC:
-				TC['name'] = URI2Name.get(TC['uri'], 'TemplateChecks[%u]' % (i,))
-			else:
-				URI2Name[TS['uri']] = TS['name']
+			URINamePair(TC, 'TemplateChecks[%u]' % (i,))
 			TC.setdefault('unanimous', False)
 			TC.setdefault('weight', 1)
 			TC['access'] = URI2Access(TC['uri'])
 		for i in range(len(getattr(self, 'BlockSubmissions', ()))):
 			BS = self.BlockSubmissions[i]
-			if 'name' not in BS:
-				BS['name'] = URI2Name.get(BS['uri'], 'BlockSubmissions[%u]' % (i,))
+			URINamePair(BS, 'BlockSubmissions[%u]' % (i,))
 			BS['access'] = URI2Access(BS['uri'])
 		
 		self.ready = False
