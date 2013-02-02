@@ -111,9 +111,16 @@ class merkleMaker(threading.Thread):
 			TC = self.TemplateChecks[i]
 			if 'name' not in TC:
 				TC['name'] = URI2Name.get(TC['uri'], 'TemplateChecks[%u]' % (i,))
+			else:
+				URI2Name[TS['uri']] = TS['name']
 			TC.setdefault('unanimous', False)
 			TC.setdefault('weight', 1)
 			TC['access'] = URI2Access(TC['uri'])
+		for i in range(len(getattr(self, 'BlockSubmissions', ()))):
+			BS = self.BlockSubmissions[i]
+			if 'name' not in BS:
+				BS['name'] = URI2Name.get(BS['uri'], 'BlockSubmissions[%u]' % (i,))
+			BS['access'] = URI2Access(BS['uri'])
 		
 		self.ready = False
 		self.readyCV = threading.Condition()

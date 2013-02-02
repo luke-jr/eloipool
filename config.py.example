@@ -94,6 +94,24 @@ TemplateChecks = (
 	},
 )
 
+# JSON-RPC servers to submit found blocks to (when they meet the full target)
+# The specific TemplateSource that the block was based on will always be sent
+# the block first.
+# If setting is not specified, or None, full TemplateSources list will be used.
+# If an empty list, no extra submissions will be attempted.
+# If an empty list, and the block was found on a "clear" merkle root (not based
+# on any TemplateSource), the full TemplateSources list will be used.
+BlockSubmissions = (
+	{
+		'name': 'primary',
+		'uri': 'http://user:pass@localhost:8332',
+	},
+	{
+		'name': 'secondary',
+		'uri': 'http://user:pass@localhost:18332',
+	}
+)
+
 # Templates will not be used unless they have an acceptance ratio above this
 # Range: 0.00 - 1.00
 MinimumTemplateAcceptanceRatio = 0
