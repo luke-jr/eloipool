@@ -124,7 +124,7 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
-from math import log
+from math import ceil, log
 from struct import pack, unpack
 import threading
 from time import time
@@ -175,7 +175,8 @@ def getTarget(username, now):
 			target = networkTarget
 		if config.DynamicTargetting == 2:
 			# Round target to a power of two :)
-			target = 2**int(log(target, 2) + 1) - 1
+			truebits = log(target, 2)
+			target = 2**ceil(truebits) - 1
 		if target == config.ShareTarget:
 			target = None
 	if target != targetIn:
