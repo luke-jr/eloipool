@@ -294,14 +294,23 @@ from bitcoin.varlen import varlenEncode, varlenDecode
 import bitcoin.txn
 from merklemaker import assembleBlock
 
+if not hasattr(config, 'BlockSubmissions'):
+	config.BlockSubmissions = None
+
 RBFs = []
 def blockSubmissionThread(payload, blkhash, share):
-	servers = list(a for b in MM.TemplateSources for a in b)
+	if config.BlockSubmissions is None:
+		servers = list(a for b in MM.TemplateSources for a in b)
+	else:
+		servers = list(config.BlockSubmissions)
+	
 	if hasattr(share['merkletree'], 'source_uri'):
 		servers.insert(0, {
 			'access': jsonrpc.ServiceProxy(share['merkletree'].source_uri),
 			'name': share['merkletree'].source,
 		})
+	elif not servers:
+		servers = list(a for b in MM.TemplateSources for a in b)
 	
 	myblock = (blkhash, payload[4:36])
 	payload = b2a_hex(payload).decode('ascii')
