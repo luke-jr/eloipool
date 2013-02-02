@@ -83,6 +83,8 @@ class merkleMaker(threading.Thread):
 	def _prepare(self):
 		self.TemplateSources = list(getattr(self, 'TemplateSources', ()))
 		self.TemplateChecks = list(getattr(self, 'TemplateChecks', ()))
+		if getattr(self, 'BlockSubmissions', None) is None:
+			self.BlockSubmissions = ()
 		if hasattr(self, 'UpstreamURI'):
 			self.TemplateSources.append({
 				'name': 'UpstreamURI',
