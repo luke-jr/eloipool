@@ -156,7 +156,7 @@ MM.onBlockUpdate = updateBlocks
 
 from binascii import b2a_hex
 from copy import deepcopy
-from math import log
+from math import ceil, log
 from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
@@ -196,7 +196,8 @@ def clampTarget(target, DTMode):
 	
 	if DTMode == 2:
 		# Ceil target to a power of two :)
-		target = 2**int(log(target, 2) + 1) - 1
+		truebits = log(target, 2)
+		target = 2**ceil(truebits) - 1
 	elif DTMode == 3:
 		# Round target to multiple of bdiff 1
 		target = bdiff1target / int(round(target2bdiff(target)))
