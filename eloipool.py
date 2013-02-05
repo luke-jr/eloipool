@@ -225,7 +225,7 @@ def getTarget(username, now, DTMode = None):
 		if not work:
 			# No shares received, reset to minimum
 			if targetIn:
-				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
+				getTarget.logger.debug("No shares from %s, resetting to minimum target" % (repr(username),))
 				userStatus[username] = [None, now, 0]
 			return clampTarget(None, DTMode)
 	
