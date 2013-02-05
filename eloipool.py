@@ -160,7 +160,7 @@ def getTarget(username, now):
 			return targetIn
 		if not work:
 			if targetIn:
-				getTarget.logger.debug("No shares from '%s', resetting to minimum target")
+				getTarget.logger.debug("No shares from %s, resetting to minimum target" % (repr(username),))
 				userStatus[username] = [None, now, 0]
 			return None
 	
