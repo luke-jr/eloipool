@@ -345,8 +345,7 @@ class merkleMaker(threading.Thread):
 		
 		return MP
 	
-	def _updateMerkleTree_fromTS(self, TS):
-		MP = self._CallGBT(TS)
+	def _ProcessGBT(self, MP):
 		oMP = deepcopy(MP)
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
@@ -387,10 +386,10 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
-		# Some versions of bitcoinrpc ServiceProxy have problems copying/pickling, so just store name and URI for now
-		newMerkleTree.source = TS['name']
-		newMerkleTree.source_uri = TS['uri']
 		
+		return newMerkleTree
+	
+	def _CheckTemplate(self, newMerkleTree, TS):
 		TCList = self.TemplateChecks
 		if not TCList:
 			if 'proposal' not in oMP.get('capabilities', ()):
@@ -403,6 +402,11 @@ class merkleMaker(threading.Thread):
 					'weight': 1,
 				},
 			)
+		
+		MP = newMerkleTree.MP
+		(prevBlock, height, bits) = (MP['_prevBlock'], MP['height'], MP['_bits'])
+		txnlist = newMerkleTree.data
+		cbtxn = txnlist[0]
 		
 		coinbase = self.makeCoinbase(height=height)
 		cbtxn.setCoinbase(coinbase)
@@ -463,6 +467,19 @@ class merkleMaker(threading.Thread):
 				pass
 		
 		TotalScore = AcceptedScore + RejectedScore
+		
+		return (AcceptedScore, TotalScore)
+	
+	def _updateMerkleTree_fromTS(self, TS):
+		MP = self._CallGBT(TS)
+		newMerkleTree = self._ProcessGBT(MP)
+		
+		# Some versions of bitcoinrpc ServiceProxy have problems copying/pickling, so just store name and URI for now
+		newMerkleTree.source = TS['name']
+		newMerkleTree.source_uri = TS['uri']
+		
+		(AcceptedScore, TotalScore) = self._CheckTemplate(newMerkleTree, TS)
+		
 		AcceptRatio = AcceptedScore / TotalScore
 		
 		self.logger.debug('Template from \'%s\' has %s acceptance ratio and score of %s' % (TS['name'], AcceptRatio, AcceptedScore))
