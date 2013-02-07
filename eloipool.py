@@ -35,7 +35,17 @@ if len(rootlogger.handlers) == 0:
 		format=logformat,
 		level=logging.DEBUG,
 	)
-	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer', 'WorkLogPruner'):
+	for infoOnly in (
+		'checkShare',
+		'getTarget',
+		'JSONRPCHandler',
+		'JSONRPCServer',
+		'merkleMaker',
+		'StratumServer',
+		'Waker for JSONRPCServer',
+		'Waker for StratumServer',
+		'WorkLogPruner'
+	):
 		logging.getLogger(infoOnly).setLevel(logging.INFO)
 if getattr(config, 'LogToSysLog', False):
 	sysloghandler = logging.handlers.SysLogHandler(address = '/dev/log')
