@@ -347,7 +347,8 @@ class AsyncSocketServer:
 		pass
 	
 	def boot_all(self):
-		for c in self.connections.values():
+		conns = tuple(self.connections.values())
+		for c in conns:
 			tryErr(lambda: c.boot())
 	
 	def serve_forever(self):
