@@ -136,8 +136,6 @@ class merkleMaker(threading.Thread):
 		if len(txnlist) and isinstance(txnlist[0], dict):
 			txninfo = txnlist
 			txnlist = tuple(a['data'] for a in txnlist)
-			txninfo.insert(0, {
-			})
 		elif 'transactionfees' in MP:
 			# Backward compatibility with pre-BIP22 gmp_fees branch
 			txninfo = [{'fee':a} for a in MP['transactionfees']]
@@ -151,6 +149,8 @@ class merkleMaker(threading.Thread):
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
+		txninfo.insert(0, {
+		})
 		
 		txnlistsz = sum(map(len, txnlist))
 		if txnlistsz > 934464:  # 1 "MB" limit - 64 KB breathing room
