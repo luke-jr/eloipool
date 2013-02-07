@@ -332,7 +332,7 @@ class merkleMaker(threading.Thread):
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		if 'height' not in MP:
-			MP['height'] = self.access.getinfo()['blocks'] + 1
+			MP['height'] = TS['access'].getinfo()['blocks'] + 1
 		height = MP['height']
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		(MP['_bits'], MP['_prevBlock']) = (bits, prevBlock)
