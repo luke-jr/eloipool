@@ -216,3 +216,23 @@ ShareLogging = (
 	},
 )
 
+### Settings related to poolserver logging
+
+# By default, significant events will be printed to the interactive console
+# You can customize your logging using either simple parameters, or Python's advanced logging framework
+# Note that using Python's logging framework will override the default console logging!
+
+# To simply log everything to the system log (syslog) as well:
+# LogToSysLog = True
+
+# To make a log file:
+# LogFile = 'filename.log'
+
+# For a rotating log file:
+LogFile = {
+	'filename': 'filename.log',
+	'when': 'midnight',
+	'backupCount': 7,
+}
+# For details, see:
+# http://docs.python.org/3/library/logging.handlers.html#logging.handlers.TimedRotatingFileHandler

@@ -25,14 +25,28 @@ if not hasattr(config, 'ShareTarget'):
 
 
 import logging
+import logging.handlers
 
-if len(logging.root.handlers) == 0:
+rootlogger = logging.getLogger(None)
+logformat = getattr(config, 'LogFormat', '%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s')
+logformatter = logging.Formatter(logformat)
+if len(rootlogger.handlers) == 0:
 	logging.basicConfig(
-		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s',
+		format=logformat,
 		level=logging.DEBUG,
 	)
 	for infoOnly in ('checkShare', 'JSONRPCHandler', 'merkleMaker', 'Waker for JSONRPCServer', 'JSONRPCServer', 'StratumServer', 'Waker for StratumServer', 'WorkLogPruner'):
 		logging.getLogger(infoOnly).setLevel(logging.INFO)
+if getattr(config, 'LogToSysLog', False):
+	sysloghandler = logging.handlers.SysLogHandler(address = '/dev/log')
+	rootlogger.addHandler(sysloghandler)
+if hasattr(config, 'LogFile'):
+	if isinstance(config.LogFile, str):
+		filehandler = logging.FileHandler(config.LogFile)
+	else:
+		filehandler = logging.handlers.TimedRotatingFileHandler(**config.LogFile)
+	filehandler.setFormatter(logformatter)
+	rootlogger.addHandler(filehandler)
 
 def RaiseRedFlags(reason):
 	logging.getLogger('redflag').critical(reason)
