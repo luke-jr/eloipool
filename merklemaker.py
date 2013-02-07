@@ -79,6 +79,8 @@ class merkleMaker(threading.Thread):
 		self.DifficultyChangeMod = 2016
 		self.MinimumTemplateAcceptanceRatio = 0
 		self.MinimumTemplateScore = 1
+		self.currentBlock = (None, None, None)
+		self.lastBlock = (None, None, None)
 	
 	def _prepare(self):
 		self.TemplateSources = list(getattr(self, 'TemplateSources', ()))
@@ -132,9 +134,6 @@ class merkleMaker(threading.Thread):
 		
 		self.ready = False
 		self.readyCV = threading.Condition()
-		
-		self.currentBlock = (None, None, None)
-		self.lastBlock = (None, None, None)
 		
 		self.currentMerkleTree = None
 		self.merkleRoots = deque(maxlen=self.WorkQueueSizeRegular[1])
@@ -346,7 +345,8 @@ class merkleMaker(threading.Thread):
 		return MP
 	
 	def _ProcessGBT(self, MP):
-		oMP = deepcopy(MP)
+		oMP = MP
+		MP = deepcopy(MP)
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		if 'height' not in MP:
@@ -762,5 +762,40 @@ def _test():
 	MPx = deepcopy(MP)
 	MPx['coinbasevalue'] -= 1
 	assert MBS() == (MPx, txnlist[:3], txninfo[:3])
+	# POT tests
+	MM.POT = 1
+	MM.Greedy = True
+	txninfo[1]['fee'] = 0
+	txninfo[2]['fee'] = 0
+	assert MBS(1) == (MP, txnlist, txninfo)
+	# _ProcessGBT tests
+	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
+		txn = Txn.new()
+		txn.addOutput(coinbaseValue, b'')
+		return txn
+	MM.makeCoinbaseTxn = makeCoinbaseTxn
+	MM.updateBlock = lambda *a, **ka: None
+	gbt = {
+		'transactions': [
+			{'data': '11', 'depends': [], 'fee': 1, 'sigops': 1},
+			{'data': '11', 'depends': [], 'fee': 0, 'sigops': 1},
+			{'data': '11', 'depends': [], 'fee': 0, 'sigops': 1},
+			{'data': '11', 'depends': [], 'fee': 1, 'sigops': 2}
+		],
+		'height': 219507,
+		'coinbasevalue': 3,
+		'previousblockhash': '000000000000012806bc100006dc83220bd9c2ac2709dc14a0d0fa1d6f9b733c',
+		'version': 1,
+		'bits': '1a05a6b1'
+	}
+	nMT = MM._ProcessGBT(gbt)
+	assert len(nMT.data) == 5
+	nMT.data[0].disassemble()
+	assert sum(outp[0] for outp in nMT.data[0].outputs) == 3
+	MM.POT = 2
+	nMT = MM._ProcessGBT(gbt)
+	assert len(nMT.data) in (2, 4)
+	nMT.data[0].disassemble()
+	assert sum(outp[0] for outp in nMT.data[0].outputs) == 2
 
 _test()
