@@ -344,13 +344,13 @@ class merkleMaker(threading.Thread):
 		
 		return MP
 	
-	def _ProcessGBT(self, MP):
+	def _ProcessGBT(self, MP, TS = None):
 		oMP = MP
 		MP = deepcopy(MP)
 		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		if 'height' not in MP:
-			MP['height'] = self.access.getinfo()['blocks'] + 1
+			MP['height'] = TS['access'].getinfo()['blocks'] + 1
 		height = MP['height']
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		(MP['_bits'], MP['_prevBlock']) = (bits, prevBlock)
@@ -472,7 +472,7 @@ class merkleMaker(threading.Thread):
 	
 	def _updateMerkleTree_fromTS(self, TS):
 		MP = self._CallGBT(TS)
-		newMerkleTree = self._ProcessGBT(MP)
+		newMerkleTree = self._ProcessGBT(MP, TS)
 		
 		# Some versions of bitcoinrpc ServiceProxy have problems copying/pickling, so just store name and URI for now
 		newMerkleTree.source = TS['name']
