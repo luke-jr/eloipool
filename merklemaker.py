@@ -393,7 +393,7 @@ class merkleMaker(threading.Thread):
 		TCList = self.TemplateChecks
 		if not TCList:
 			if 'proposal' not in newMerkleTree.oMP.get('capabilities', ()):
-				return (0, newMerkleTree)
+				return (None, None)
 			TCList = (
 				{
 					'name': TS['name'],
@@ -479,6 +479,8 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.source_uri = TS['uri']
 		
 		(AcceptedScore, TotalScore) = self._CheckTemplate(newMerkleTree, TS)
+		if TotalScore is None:
+			return (0, newMerkleTree)
 		
 		AcceptRatio = AcceptedScore / TotalScore
 		
