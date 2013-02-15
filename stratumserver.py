@@ -143,6 +143,7 @@ class StratumHandler(networkserver.SocketHandler):
 			],
 			xid,
 			4,
+			xid,
 		]
 	
 	def _stratum_mining_resume(self, sid):
