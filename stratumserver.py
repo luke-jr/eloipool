@@ -147,14 +147,23 @@ class StratumHandler(networkserver.SocketHandler):
 	
 	def _stratum_mining_resume(self, sid):
 		assert(len(sid) == 8)
-		sid = a2b_hex(sid)
-		sid = struct.unpack('=I', sid)[0]
+		sidb = a2b_hex(sid)
+		sid = struct.unpack('=I', sidb)[0]
 		self._release_sid()
 		try:
 			self._sid = UniqueSessionIdManager.getSpecific(sid)
-			return True
 		except KeyError:
+			tryErr(lambda: delattr(self, 'extranonce1'))
+			try:
+				del self.server._Clients[id(self)]
+			except:
+				pass
+			tryErr(lambda: self.changeTask(None))
 			return False
+		self.extranonce1 = sidb
+		self.server._Clients[id(self)] = self
+		self.changeTask(self.sendJob, 0)
+		return True
 	
 	def handle_close(self):
 		self._release_sid()
