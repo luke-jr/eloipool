@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import b2a_hex
+from binascii import a2b_hex, b2a_hex
 import collections
 from copy import deepcopy
 import json
@@ -51,6 +51,11 @@ class StratumHandler(networkserver.SocketHandler):
 		self.Usernames = {}
 		self.lastBDiff = None
 		self.JobTargets = collections.OrderedDict()
+	
+	def _release_sid(self):
+		if hasattr(self, '_sid'):
+			UniqueSessionIdManager.put(self._sid, delay=True)
+			delattr(self, '_sid')
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
@@ -140,10 +145,19 @@ class StratumHandler(networkserver.SocketHandler):
 			4,
 		]
 	
+	def _stratum_mining_resume(self, sid):
+		assert(len(sid) == 8)
+		sid = a2b_hex(sid)
+		sid = struct.unpack('=I', sid)[0]
+		self._release_sid()
+		try:
+			self._sid = UniqueSessionIdManager.getSpecific(sid)
+			return True
+		except KeyError:
+			return False
+	
 	def handle_close(self):
-		if hasattr(self, '_sid'):
-			UniqueSessionIdManager.put(self._sid)
-			delattr(self, '_sid')
+		self._release_sid()
 		try:
 			del self.server._Clients[id(self)]
 		except:

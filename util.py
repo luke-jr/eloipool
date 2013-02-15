@@ -195,6 +195,9 @@ class ScheduleDict:
 		else:
 			heapq.heappush(self._heap, (t, k, o))
 	
+	def __contains__(self, o):
+		return id(o) in self._dict
+	
 	def __getitem__(self, o):
 		return self._dict[id(o)][0]
 	
@@ -216,32 +219,84 @@ WithNoop = WithNoop()
 
 from collections import deque
 import threading
+import time
 
 class _UniqueSessionIdManager:
-	def __init__(self, size = 4):
+	def __init__(self, size = 4, defaultDelay = 120):
 		self._NextID = 0
 		self._NextID_Lock = threading.Lock()
 		self._FreeIDs = deque()
 		self._size = size
 		self._max = (0x100 ** size) - 1
+		self._defaultDelay = defaultDelay
+		self._schPut = ScheduleDict()
+		self._schPut_Lock = threading.Lock()
 	
 	def size(self):
 		return self._size
 	
-	def put(self, sid):
-		self._FreeIDs.append(sid)
+	def put(self, sid, delay = False, now = None):
+		if not delay:
+			return self._FreeIDs.append(sid)
+		
+		if delay is True:
+			delay = self._defaultDelay
+		if now is None:
+			now = time.time()
+		with self._schPut_Lock:
+			self._schPut[sid] = now + delay
 	
-	def get(self):
+	def get(self, desired = None, now = None):
 		try:
 			return self._FreeIDs.popleft()
 		except IndexError:
 			pass
 		
+		# Check delayed-free for one
+		if now is None:
+			now = time.time()
+		with self._schPut_Lock:
+			if len(self._schPut) and self._schPut.nextTime() <= now:
+				sid = self._schPut.shift()
+				while len(self._schPut) and self._schPut.nextTime() <= now:
+					self.put(self._schPut.shift())
+				return sid
+		
+		# If none free, make a new one
 		with self._NextID_Lock:
 			sid = self._NextID
 			self._NextID = sid + 1
-		if sid > self._max:
-			raise IndexError('Ran out of session ids')
-		return sid
+		if sid <= self._max:
+			return sid
+		
+		# TODO: Maybe steal an about-to-be-freed SID in the worst case scenario?
+		
+		raise IndexError('Ran out of session ids')
+	
+	# NOTE: Will steal a pending-free sid
+	def getSpecific(self, desired):
+		try:
+			self._FreeIDs.remove(desired)
+			return desired
+		except ValueError:
+			pass
+		
+		# FIXME: relies on id(number) == id(number)
+		with self._schPut_Lock:
+			if desired in self._schPut:
+				del self._schPut[desired]
+				return desired
+		
+		# NOTE: Generated growth is limited to avoid memory exhaustion exploits
+		with self._NextID_Lock:
+			if desired <= min(self._max, self._NextID + 0x10000 - len(self._FreeIDs)):
+				NextID = self._NextID
+				# NOTE: Incrementing _NextID up front in case of exception
+				self._NextID = desired + 1
+				for i in range(NextID, desired):
+					self.put(i)
+				return desired
+		
+		raise KeyError('Session id %u not available' % (desired,))
 
 UniqueSessionIdManager = _UniqueSessionIdManager()
