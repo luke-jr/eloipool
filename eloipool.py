@@ -277,7 +277,7 @@ def TopTargets(n = 0x10):
 		return tmp2[t]
 	for k in tmp[-n:]:
 		tgt = userStatus[k][0]
-		print('%34s %064x %3d' % (k, tgt, t2d(tgt)))
+		print('%-34s %064x %3d' % (k, tgt, t2d(tgt)))
 
 def RegisterWork(username, wli, wld):
 	now = time()
