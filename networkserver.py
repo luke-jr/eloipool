@@ -403,6 +403,7 @@ class AsyncSocketServer:
 				continue
 			except:
 				self.logger.error(traceback.format_exc())
+				continue
 			self.doing = 'events'
 			for (fd, e) in events:
 				o = self._fd[fd]
