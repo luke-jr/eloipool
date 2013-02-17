@@ -636,6 +636,7 @@ class JSONRPCServer:
 				continue
 			except:
 				self.logger.error(traceback.format_exc())
+				continue
 			for (fd, e) in events:
 				o = self._fd[fd]
 				try:
