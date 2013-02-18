@@ -220,6 +220,9 @@ def clampTarget(target, DTMode):
 	if DTMode == 2:
 		# Ceil target to a power of two :)
 		truebits = log(target, 2)
+		if target <= 2**int(truebits):
+			# Workaround for bug in Python's math.log function
+			truebits = int(truebits)
 		target = 2**ceil(truebits) - 1
 	elif DTMode == 3:
 		# Round target to multiple of bdiff 1
