@@ -342,7 +342,7 @@ def blockSubmissionThread(payload, blkhash, share):
 						logShare(share)
 					return
 				
-				servers.append(UpstreamBitcoindJSONRPC)
+				servers.append(TS)
 				continue
 		
 		# At this point, we have a reason back
