@@ -528,7 +528,7 @@ class merkleMaker(threading.Thread):
 			self.updateBlock(*blkbasics, _HBH=(MP['previousblockhash'], MP['bits']))
 		self.currentMerkleTree = BestMT
 	
-	def updateMerkleTree(self):
+	def _updateMerkleTree(self):
 		global now
 		self.logger.debug('Polling for new block template')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
@@ -541,6 +541,11 @@ class merkleMaker(threading.Thread):
 		if self.needMerkle == 2:
 			self.needMerkle = 1
 			self.needMerkleSince = now
+	
+	def updateMerkleTree(self):
+		global now
+		now = time()
+		self._updateMerkleTree()
 	
 	def makeCoinbase(self, height):
 		now = int(time())
@@ -628,7 +633,7 @@ class merkleMaker(threading.Thread):
 		
 		# No bits = no mining :(
 		if not self.ready:
-			return self.updateMerkleTree()
+			return self._updateMerkleTree()
 		
 		# First, ensure we have the minimum clear, next, and regular (in that order)
 		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[0]:
@@ -640,7 +645,7 @@ class merkleMaker(threading.Thread):
 		
 		# If we've met the minimum requirements, consider updating the merkle tree
 		if self.nextMerkleUpdate <= now:
-			return self.updateMerkleTree()
+			return self._updateMerkleTree()
 		
 		# Finally, fill up clear, next, and regular until we've met the maximums
 		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[1]:
