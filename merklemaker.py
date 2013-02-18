@@ -25,11 +25,9 @@ class merkleMaker(threading.Thread):
 		self.clearMerkleRoots = Queue(self.WorkQueueSizeLongpoll[1])
 		
 		self.nextMerkleUpdate = 0
-		global now
-		now = time()
 		self.updateMerkleTree()
 	
-	def updateMerkleTree(self):
+	def _updateMerkleTree(self):
 		sys.stdout.write("\nUPDATE ")
 		global now
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
@@ -49,6 +47,11 @@ class merkleMaker(threading.Thread):
 			self.currentMerkleTree = newMerkleTree
 		self.nextMerkleUpdate = now + self.MinimumTxnUpdateWait
 	
+	def updateMerkleTree(self):
+		global now
+		now = time()
+		self._updateMerkleTree()
+	
 	def makeMerkleRoot(self, merkleTree):
 		coinbaseTxn = self.makeCoinbaseTxn()
 		merkleRoot = merkleTree.withFirst(coinbaseTxn)
@@ -60,7 +63,7 @@ class merkleMaker(threading.Thread):
 		# First, update merkle tree if we haven't for a while and aren't crunched for time
 		now = time()
 		if self.nextMerkleUpdate <= now and self.clearMerkleRoots.qsize() > self.WorkQueueSizeLongpoll[0] and len(self.merkleRoots) > self.WorkQueueSizeRegular[0]:
-			self.updateMerkleTree()
+			self._updateMerkleTree()
 		# Next, fill up the longpoll queue first, since it can be used as a failover for the main queue
 		elif not self.clearMerkleRoots.full():
 			sys.stdout.write("CLR ")
