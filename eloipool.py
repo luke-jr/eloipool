@@ -176,6 +176,9 @@ def getTarget(username, now):
 		if config.DynamicTargetting == 2:
 			# Round target to a power of two :)
 			truebits = log(target, 2)
+			if target <= 2**int(truebits):
+				# Workaround for bug in Python's math.log function
+				truebits = int(truebits)
 			target = 2**ceil(truebits) - 1
 		if target == config.ShareTarget:
 			target = None
