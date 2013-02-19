@@ -233,7 +233,7 @@ def clampTarget(target, DTMode):
 		return None
 	return target
 
-def getTarget(username, now, DTMode = None):
+def getTarget(username, now, DTMode = None, RequestedTarget = None):
 	if DTMode is None:
 		DTMode = config.DynamicTargetting
 	if not DTMode:
@@ -242,8 +242,9 @@ def getTarget(username, now, DTMode = None):
 		status = userStatus[username]
 	else:
 		# No record, use default target
-		userStatus[username] = [None, now, 0]
-		return clampTarget(None, DTMode)
+		RequestedTarget = clampTarget(RequestedTarget, DTMode)
+		userStatus[username] = [RequestedTarget, now, 0]
+		return RequestedTarget
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
 		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
@@ -282,9 +283,9 @@ def TopTargets(n = 0x10):
 		tgt = userStatus[k][0]
 		print('%-34s %064x %3d' % (k, tgt, t2d(tgt)))
 
-def RegisterWork(username, wli, wld):
+def RegisterWork(username, wli, wld, RequestedTarget = None):
 	now = time()
-	target = getTarget(username, now)
+	target = getTarget(username, now, RequestedTarget=RequestedTarget)
 	wld = tuple(wld) + (target,)
 	workLog.setdefault(username, {})[wli] = (wld, now)
 	return target or config.ShareTarget
@@ -297,7 +298,7 @@ def getBlockHeader(username):
 	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
 
-def getBlockTemplate(username, p_magic = None):
+def getBlockTemplate(username, p_magic = None, RequestedTarget = None):
 	if server.tls.wantClear:
 		wantClear = True
 	elif p_magic and username not in workLog:
@@ -310,7 +311,7 @@ def getBlockTemplate(username, p_magic = None):
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	target = RegisterWork(username, wli, MC)
+	target = RegisterWork(username, wli, MC, RequestedTarget=RequestedTarget)
 	return (MC, workLog[username][wli], target)
 
 def getStratumJob(jobid, wantClear = False):
