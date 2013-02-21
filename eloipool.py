@@ -335,6 +335,9 @@ def receiveShare(share):
 	except RejectedShare as rej:
 		share['rejectReason'] = str(rej)
 		raise
+	except BaseException as e:
+		share['rejectReason'] = 'ERROR'
+		raise
 	finally:
 		logShare(share)
 
