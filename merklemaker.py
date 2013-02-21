@@ -488,9 +488,12 @@ class merkleMaker(threading.Thread):
 					if r is None:
 						# Failed completely
 						continue
-					if Best[0] < r[0]:
+					
+					(AcceptRatio, newMerkleTree) = r
+					
+					if Best[0] < AcceptRatio:
 						Best = r
-						if r[0] == 1:
+						if AcceptRatio == 1:
 							break
 				except:
 					if TSPriList == self.TemplateSources[-1] and i == len(TSPriList) - 1 and Best[1] is None:
