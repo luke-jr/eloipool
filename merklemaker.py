@@ -491,6 +491,9 @@ class merkleMaker(threading.Thread):
 					
 					(AcceptRatio, newMerkleTree) = r
 					
+					# NOTE: If you're going to try to remove this preference for the highest block, you need to (at least) stop _ProcessGBT from calling updateBlock whenever it sees a new high
+					AcceptRatio += newMerkleTree.MP['height']
+					
 					if Best[0] < AcceptRatio:
 						Best = r
 						if AcceptRatio == 1:
