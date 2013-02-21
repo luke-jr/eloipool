@@ -643,6 +643,9 @@ def receiveShare(share):
 	except RejectedShare as rej:
 		share['rejectReason'] = str(rej)
 		raise
+	except BaseException as e:
+		share['rejectReason'] = 'ERROR'
+		raise
 	finally:
 		if not share.get('upstreamRejectReason', None) is PendingUpstream:
 			logShare(share)
