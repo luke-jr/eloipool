@@ -482,7 +482,10 @@ class merkleMaker(threading.Thread):
 		if TotalScore is None:
 			return (0, newMerkleTree)
 		
-		AcceptRatio = AcceptedScore / TotalScore
+		if TotalScore:
+			AcceptRatio = AcceptedScore / TotalScore
+		else:
+			AcceptRatio = 0.0
 		
 		self.logger.debug('Template from \'%s\' has %s acceptance ratio and score of %s' % (TS['name'], AcceptRatio, AcceptedScore))
 		
