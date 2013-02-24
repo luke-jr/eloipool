@@ -1,5 +1,5 @@
 # Eloipool - Python Bitcoin pool server
-# Copyright (C) 2011-2012  Luke Dashjr <luke-jr+eloipool@utopios.org>
+# Copyright (C) 2011-2013  Luke Dashjr <luke-jr+eloipool@utopios.org>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -482,7 +482,10 @@ class merkleMaker(threading.Thread):
 		if TotalScore is None:
 			return (0, newMerkleTree)
 		
-		AcceptRatio = AcceptedScore / TotalScore
+		if TotalScore:
+			AcceptRatio = AcceptedScore / TotalScore
+		else:
+			AcceptRatio = 0.0
 		
 		self.logger.debug('Template from \'%s\' has %s acceptance ratio and score of %s' % (TS['name'], AcceptRatio, AcceptedScore))
 		
@@ -507,9 +510,15 @@ class merkleMaker(threading.Thread):
 					if r is None:
 						# Failed completely
 						continue
-					if Best[0] < r[0]:
+					
+					(AcceptRatio, newMerkleTree) = r
+					
+					# NOTE: If you're going to try to remove this preference for the highest block, you need to (at least) stop _ProcessGBT from calling updateBlock whenever it sees a new high
+					AcceptRatio += newMerkleTree.MP['height']
+					
+					if Best[0] < AcceptRatio:
 						Best = r
-						if r[0] == 1:
+						if AcceptRatio == 1:
 							break
 				except:
 					if TSPriList == self.TemplateSources[-1] and i == len(TSPriList) - 1 and Best[1] is None:
@@ -528,7 +537,7 @@ class merkleMaker(threading.Thread):
 			self.updateBlock(*blkbasics, _HBH=(MP['previousblockhash'], MP['bits']))
 		self.currentMerkleTree = BestMT
 	
-	def updateMerkleTree(self):
+	def _updateMerkleTree(self):
 		global now
 		self.logger.debug('Polling for new block template')
 		self.nextMerkleUpdate = now + self.TxnUpdateRetryWait
@@ -541,6 +550,11 @@ class merkleMaker(threading.Thread):
 		if self.needMerkle == 2:
 			self.needMerkle = 1
 			self.needMerkleSince = now
+	
+	def updateMerkleTree(self):
+		global now
+		now = time()
+		self._updateMerkleTree()
 	
 	def makeCoinbase(self, height):
 		now = int(time())
@@ -628,7 +642,7 @@ class merkleMaker(threading.Thread):
 		
 		# No bits = no mining :(
 		if not self.ready:
-			return self.updateMerkleTree()
+			return self._updateMerkleTree()
 		
 		# First, ensure we have the minimum clear, next, and regular (in that order)
 		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[0]:
@@ -640,7 +654,7 @@ class merkleMaker(threading.Thread):
 		
 		# If we've met the minimum requirements, consider updating the merkle tree
 		if self.nextMerkleUpdate <= now:
-			return self.updateMerkleTree()
+			return self._updateMerkleTree()
 		
 		# Finally, fill up clear, next, and regular until we've met the maximums
 		if self.clearMerkleRoots.qsize() < self.WorkQueueSizeClear[1]:

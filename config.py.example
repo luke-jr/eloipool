@@ -1,3 +1,15 @@
+# Please note that config files are Python source code!
+# A common mistake is to put an option list (such as TemplateChecks,
+# JSONRPCAddresses, etc) excluding the final comma.
+# For example (this is WRONG):
+#     JSONRPCAddresses = (
+#         ('', 8337)  # <-- there must be a comma after EVERY item, even last
+#     )
+# Without the final comma, should the option list ever have only one item in
+# it, Python would interpret the "main" parenthesis as a mere sub-expression
+# instead of a list of values. If that occurs, you might get crazy errors, or
+# things might just not work correctly. Be careful to not miss the commas.
+
 ### Settings relating to server identity
 
 # Name of the server

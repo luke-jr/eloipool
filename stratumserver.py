@@ -1,5 +1,5 @@
 # Eloipool - Python Bitcoin pool server
-# Copyright (C) 2011-2012  Luke Dashjr <luke-jr+eloipool@utopios.org>
+# Copyright (C) 2011-2013  Luke Dashjr <luke-jr+eloipool@utopios.org>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -51,6 +51,7 @@ class StratumHandler(networkserver.SocketHandler):
 		self.Usernames = {}
 		self.lastBDiff = None
 		self.JobTargets = collections.OrderedDict()
+		self.UA = None
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
@@ -66,6 +67,16 @@ class StratumHandler(networkserver.SocketHandler):
 			rpc = json.loads(inbuf)
 		except ValueError:
 			self.boot()
+			return
+		if 'method' not in rpc:
+			# Assume this is a reply to our request
+			funcname = '_stratumreply_%s' % (rpc['id'],)
+			if not hasattr(self, funcname):
+				return
+			try:
+				getattr(self, funcname)(rpc)
+			except BaseException as e:
+				self.logger.debug(traceback.format_exc())
 			return
 		funcname = '_stratum_%s' % (rpc['method'].replace('.', '_'),)
 		if not hasattr(self, funcname):
@@ -123,6 +134,16 @@ class StratumHandler(networkserver.SocketHandler):
 			self.JobTargets.popitem(False)
 		self.JobTargets[self.server.JobId] = target
 	
+	def requestStratumUA(self):
+		self.sendReply({
+			'id': 7,
+			'method': 'client.get_version',
+			'params': (),
+		})
+	
+	def _stratumreply_7(self, rpc):
+		self.UA = rpc.get('result') or rpc
+	
 	def _stratum_mining_subscribe(self, xid = None, UA = None):
 		if not UA is None:
 			self.UA = UA
@@ -155,7 +176,7 @@ class StratumHandler(networkserver.SocketHandler):
 			4,
 		]
 	
-	def handle_close(self):
+	def close(self):
 		if hasattr(self, '_sid'):
 			UniqueSessionIdManager.put(self._sid, delay=True)
 			delattr(self, '_sid')
@@ -163,12 +184,6 @@ class StratumHandler(networkserver.SocketHandler):
 			del self.server._Clients[id(self)]
 		except:
 			pass
-		super().handle_close()
-	
-	def close(self):
-		if hasattr(self, '_sid'):
-			UniqueSessionIdManager.put(self._sid, delay=True)
-			delattr(self, '_sid')
 		super().close()
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
@@ -203,6 +218,7 @@ class StratumHandler(networkserver.SocketHandler):
 			valid = False
 		if valid:
 			self.Usernames[username] = None
+			self.changeTask(self.requestStratumUA, 0)
 		return valid
 	
 	def _stratum_mining_get_transactions(self, jobid):

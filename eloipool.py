@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # Eloipool - Python Bitcoin pool server
-# Copyright (C) 2011-2012  Luke Dashjr <luke-jr+eloipool@utopios.org>
+# Copyright (C) 2011-2013  Luke Dashjr <luke-jr+eloipool@utopios.org>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -220,6 +220,9 @@ def clampTarget(target, DTMode):
 	if DTMode == 2:
 		# Ceil target to a power of two :)
 		truebits = log(target, 2)
+		if target <= 2**int(truebits):
+			# Workaround for bug in Python's math.log function
+			truebits = int(truebits)
 		target = 2**ceil(truebits) - 1
 	elif DTMode == 3:
 		# Round target to multiple of bdiff 1
@@ -230,7 +233,7 @@ def clampTarget(target, DTMode):
 		return None
 	return target
 
-def getTarget(username, now, DTMode = None):
+def getTarget(username, now, DTMode = None, RequestedTarget = None):
 	if DTMode is None:
 		DTMode = config.DynamicTargetting
 	if not DTMode:
@@ -239,8 +242,9 @@ def getTarget(username, now, DTMode = None):
 		status = userStatus[username]
 	else:
 		# No record, use default target
-		userStatus[username] = [None, now, 0]
-		return clampTarget(None, DTMode)
+		RequestedTarget = clampTarget(RequestedTarget, DTMode)
+		userStatus[username] = [RequestedTarget, now, 0]
+		return RequestedTarget
 	(targetIn, lastUpdate, work) = status
 	if work <= config.DynamicTargetGoal:
 		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
@@ -277,11 +281,11 @@ def TopTargets(n = 0x10):
 		return tmp2[t]
 	for k in tmp[-n:]:
 		tgt = userStatus[k][0]
-		print('%34s %064x %3d' % (k, tgt, t2d(tgt)))
+		print('%-34s %064x %3d' % (k, tgt, t2d(tgt)))
 
-def RegisterWork(username, wli, wld):
+def RegisterWork(username, wli, wld, RequestedTarget = None):
 	now = time()
-	target = getTarget(username, now)
+	target = getTarget(username, now, RequestedTarget=RequestedTarget)
 	wld = tuple(wld) + (target,)
 	workLog.setdefault(username, {})[wli] = (wld, now)
 	return target or config.ShareTarget
@@ -294,7 +298,7 @@ def getBlockHeader(username):
 	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
 
-def getBlockTemplate(username, p_magic = None):
+def getBlockTemplate(username, p_magic = None, RequestedTarget = None):
 	if server.tls.wantClear:
 		wantClear = True
 	elif p_magic and username not in workLog:
@@ -307,7 +311,7 @@ def getBlockTemplate(username, p_magic = None):
 	wliPos = coinbase[0] + 2
 	wliLen = coinbase[wliPos - 1]
 	wli = coinbase[wliPos:wliPos+wliLen]
-	target = RegisterWork(username, wli, MC)
+	target = RegisterWork(username, wli, MC, RequestedTarget=RequestedTarget)
 	return (MC, workLog[username][wli], target)
 
 def getStratumJob(jobid, wantClear = False):
@@ -388,7 +392,7 @@ def blockSubmissionThread(payload, blkhash, share):
 						logShare(share)
 					return
 				
-				servers.append(UpstreamBitcoindJSONRPC)
+				servers.append(TS)
 				continue
 		
 		# At this point, we have a reason back
@@ -638,6 +642,9 @@ def receiveShare(share):
 		checkShare(share)
 	except RejectedShare as rej:
 		share['rejectReason'] = str(rej)
+		raise
+	except BaseException as e:
+		share['rejectReason'] = 'ERROR'
 		raise
 	finally:
 		if not share.get('upstreamRejectReason', None) is PendingUpstream:
