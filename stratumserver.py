@@ -145,7 +145,7 @@ class StratumHandler(networkserver.SocketHandler):
 	def _stratumreply_7(self, rpc):
 		self.UA = rpc.get('result') or rpc
 	
-	def _stratum_mining_subscribe(self, xid = None, UA = None):
+	def _stratum_mining_subscribe(self, UA = None, xid = None):
 		if not UA is None:
 			self.UA = UA
 		if not xid is None:
