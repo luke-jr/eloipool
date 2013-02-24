@@ -167,14 +167,14 @@ class ScheduleDict:
 		self._build_heap()
 	
 	def _build_heap(self):
-		newheap = list((v[0], k, v[1]) for k, v in self._dict.items())
+		newheap = list((v[0], id(o), o) for o, v in self._dict.items())
 		heapq.heapify(newheap)
 		self._heap = newheap
 	
 	def nextTime(self):
 		while True:
 			(t, k, o) = self._heap[0]
-			if k in self._dict:
+			if o in self._dict:
 				break
 			heapq.heappop(self._heap)
 		return t
@@ -182,14 +182,14 @@ class ScheduleDict:
 	def shift(self):
 		while True:
 			(t, k, o) = heapq.heappop(self._heap)
-			if k in self._dict:
+			if o in self._dict:
 				break
-		del self._dict[k]
+		del self._dict[o]
 		return o
 	
 	def __setitem__(self, o, t):
-		k = o
-		self._dict[k] = (t, o)
+		k = id(o)
+		self._dict[o] = (t, o)
 		if len(self._heap) / 2 > len(self._dict):
 			self._build_heap()
 		else:
