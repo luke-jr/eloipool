@@ -102,12 +102,12 @@ class StratumHandler(networkserver.SocketHandler):
 			4,
 		]
 	
-	def handle_close(self):
+	def close(self):
 		try:
 			del self.server._Clients[id(self)]
 		except:
 			pass
-		super().handle_close()
+		super().close()
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
 		if username not in self.Usernames:
