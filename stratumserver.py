@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from binascii import b2a_hex
+from binascii import a2b_hex, b2a_hex
 import collections
 from copy import deepcopy
 import json
@@ -123,7 +123,22 @@ class StratumHandler(networkserver.SocketHandler):
 			self.JobTargets.popitem(False)
 		self.JobTargets[self.server.JobId] = target
 	
-	def _stratum_mining_subscribe(self):
+	def _stratum_mining_subscribe(self, xid = None, UA = None):
+		if not UA is None:
+			self.UA = UA
+		if not xid is None:
+			assert(len(xid) == 8)
+			sid = a2b_hex(xid)
+			sid = struct.unpack('=I', sid)[0]
+			try:
+				assert(UniqueSessionIdManager.getSpecific(sid) == sid)
+			except (KeyError, AssertionError):
+				pass
+			else:
+				oldsid = getattr(self, '_sid', None)
+				self._sid = sid
+				if not oldsid is None:
+					UniqueSessionIdManager.put(oldsid, delay=True)
 		if not hasattr(self, '_sid'):
 			self._sid = UniqueSessionIdManager.get()
 		xid = struct.pack('=I', self._sid)  # NOTE: Assumes sessionids are 4 bytes
@@ -133,7 +148,7 @@ class StratumHandler(networkserver.SocketHandler):
 		self.changeTask(self.sendJob, 0)
 		return [
 			[
-				['mining.notify', '%s1' % (xid,)],
+				['mining.notify', '%s' % (xid,)],
 				['mining.set_difficulty', '%s2' % (xid,)],
 			],
 			xid,
@@ -142,13 +157,19 @@ class StratumHandler(networkserver.SocketHandler):
 	
 	def handle_close(self):
 		if hasattr(self, '_sid'):
-			UniqueSessionIdManager.put(self._sid)
+			UniqueSessionIdManager.put(self._sid, delay=True)
 			delattr(self, '_sid')
 		try:
 			del self.server._Clients[id(self)]
 		except:
 			pass
 		super().handle_close()
+	
+	def close(self):
+		if hasattr(self, '_sid'):
+			UniqueSessionIdManager.put(self._sid, delay=True)
+			delattr(self, '_sid')
+		super().close()
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
 		if username not in self.Usernames:
