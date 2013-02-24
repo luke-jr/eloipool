@@ -188,7 +188,7 @@ class ScheduleDict:
 		return o
 	
 	def __setitem__(self, o, t):
-		k = id(o)
+		k = o
 		self._dict[k] = (t, o)
 		if len(self._heap) / 2 > len(self._dict):
 			self._build_heap()
@@ -196,10 +196,10 @@ class ScheduleDict:
 			heapq.heappush(self._heap, (t, k, o))
 	
 	def __getitem__(self, o):
-		return self._dict[id(o)][0]
+		return self._dict[o][0]
 	
 	def __delitem__(self, o):
-		del self._dict[id(o)]
+		del self._dict[o]
 		if len(self._dict) < 2:
 			self._build_heap()
 	
