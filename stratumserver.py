@@ -20,11 +20,12 @@ from copy import deepcopy
 import json
 import logging
 import networkserver
+import random
 import socket
 import struct
 from time import time
 import traceback
-from util import RejectedShare, swap32, target2bdiff, UniqueSessionIdManager
+from util import dblsha, RejectedShare, swap32, target2bdiff, UniqueSessionIdManager
 
 class StratumError(BaseException):
 	def __init__(self, errno, msg, tb = True):
@@ -148,9 +149,13 @@ class StratumHandler(networkserver.SocketHandler):
 		if not UA is None:
 			self.UA = UA
 		if not xid is None:
-			assert(len(xid) == 8)
-			sid = a2b_hex(xid)
+			assert(len(xid) >= 8)
+			sid = a2b_hex(xid[:8])
 			sid = struct.unpack('=I', sid)[0]
+			oldclient = self.server._Clients.get(sid)
+			if oldclient and not oldclient is self:
+				if oldclient._xid == xid:
+					oldclient.close()
 			try:
 				assert(UniqueSessionIdManager.getSpecific(sid) == sid)
 			except (KeyError, AssertionError):
@@ -159,31 +164,31 @@ class StratumHandler(networkserver.SocketHandler):
 				oldsid = getattr(self, '_sid', None)
 				self._sid = sid
 				if not oldsid is None:
+					del self.server._Clients[oldsid]
 					UniqueSessionIdManager.put(oldsid, delay=True)
 		if not hasattr(self, '_sid'):
 			self._sid = UniqueSessionIdManager.get()
 		xid = struct.pack('=I', self._sid)  # NOTE: Assumes sessionids are 4 bytes
 		self.extranonce1 = xid
+		xid += dblsha(repr( (id(self), self.addr, random.random()) ).encode('utf-8'))
 		xid = b2a_hex(xid).decode('ascii')
-		self.server._Clients[id(self)] = self
+		self._xid = xid
+		self.server._Clients[self._sid] = self
 		self.changeTask(self.sendJob, 0)
 		return [
 			[
 				['mining.notify', '%s' % (xid,)],
 				['mining.set_difficulty', '%s2' % (xid,)],
 			],
-			xid,
+			xid[:8],
 			4,
 		]
 	
 	def close(self):
 		if hasattr(self, '_sid'):
+			del self.server._Clients[self._sid]
 			UniqueSessionIdManager.put(self._sid, delay=True)
 			delattr(self, '_sid')
-		try:
-			del self.server._Clients[id(self)]
-		except:
-			pass
 		super().close()
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
