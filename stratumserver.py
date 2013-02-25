@@ -168,6 +168,9 @@ class StratumHandler(networkserver.SocketHandler):
 					UniqueSessionIdManager.put(oldsid, delay=True)
 		if not hasattr(self, '_sid'):
 			self._sid = UniqueSessionIdManager.get()
+		if self.server._Clients.get(self._sid) not in (self, None):
+			del self._sid
+			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate sessionid'))
 		xid = struct.pack('=I', self._sid)  # NOTE: Assumes sessionids are 4 bytes
 		self.extranonce1 = xid
 		xid += dblsha(repr( (id(self), self.addr, random.random()) ).encode('utf-8'))
