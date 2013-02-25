@@ -84,6 +84,8 @@ TemplateSources = (
 # JSON-RPC servers to check block proposals with
 # If none provided, and selected source supports proposals, it alone will also
 # be used for checking
+# NOTE: Any servers listed here MUST support BIP 23 Block Proposals
+# NOTE: Mainline bitcoind (as of 0.8) does NOT support this (though the 0.8.0.eligius branch does)
 TemplateChecks = (
 	{
 		'name': 'primary',
