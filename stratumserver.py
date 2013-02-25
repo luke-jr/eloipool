@@ -147,6 +147,9 @@ class StratumHandler(networkserver.SocketHandler):
 	def _stratum_mining_subscribe(self):
 		if not hasattr(self, '_sid'):
 			self._sid = UniqueSessionIdManager.get()
+		if self.server._Clients.get(self._sid) not in (self, None):
+			del self._sid
+			raise self.server.RaiseRedFlags(RuntimeError('issuing duplicate sessionid'))
 		xid = struct.pack('=I', self._sid)  # NOTE: Assumes sessionids are 4 bytes
 		self.extranonce1 = xid
 		xid = b2a_hex(xid).decode('ascii')
