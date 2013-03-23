@@ -305,12 +305,15 @@ class merkleMaker(threading.Thread):
 					pot *= 2
 				elif pot >= feetxncount:
 					pass
-				elif POTMode > 1 and self._APOT(txninfo[pot-1:], MP, POTInfo):
-					# Trimmed even transactions with fees
-					pass
+				elif POTMode > 1:
+					if self._APOT(txninfo[pot-1:], MP, POTInfo):
+						# Trimmed even transactions with fees
+						pass
+					else:
+						pot = idealtxncount
+						self._floodWarning(now, 'Non-POT', doin='Making merkle tree with %d transactions (ideal: %d; max: %d)' % (pot, idealtxncount, txncount))
 				else:
 					pot = idealtxncount
-					self._floodWarning(now, 'Non-POT', doin='Making merkle tree with %d transactions (ideal: %d; max: %d)' % (pot, idealtxncount, txncount))
 			POTInfo[1][1] = pot
 			pot -= 1
 			txnlist[pot:] = ()
