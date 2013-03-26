@@ -17,6 +17,7 @@
 import logging
 from queue import Queue
 import threading
+import traceback
 from util import shareLogFormatter
 
 _logger = logging.getLogger('sharelogging.sql')
