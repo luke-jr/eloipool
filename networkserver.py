@@ -295,6 +295,7 @@ class AsyncSocketServer:
 		self.running = False
 		self.keepgoing = True
 		self.rejecting = False
+		self.lastidle = 0
 		
 		self._epoll = select.epoll()
 		self._fd = {}
@@ -369,8 +370,8 @@ class AsyncSocketServer:
 			self.doing = 'pre-schedule'
 			self.pre_schedule()
 			self.doing = 'schedule'
+			timeNow = time()
 			if len(self._sch):
-				timeNow = time()
 				while True:
 					with self._schLock:
 						if not len(self._sch):
@@ -395,6 +396,10 @@ class AsyncSocketServer:
 						if EH: tryErr(EH.handle_close)
 			else:
 				timeout = -1
+			if self.lastidle < timeNow - 1:
+				timeout = 0
+			elif timeout < 0 or timeout > 1:
+				timeout = 1
 			
 			self.doing = 'poll'
 			try:
@@ -405,6 +410,8 @@ class AsyncSocketServer:
 				self.logger.error(traceback.format_exc())
 				continue
 			self.doing = 'events'
+			if not events:
+				self.lastidle = time()
 			for (fd, e) in events:
 				o = self._fd[fd]
 				self.lastHandler = o
