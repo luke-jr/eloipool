@@ -37,6 +37,7 @@ class _getblocktemplate:
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 		'expires': 120,
 		'version': 2,
+		'submitold': True,
 		
 		# Bitcoin-specific:
 		'sigoplimit': 20000,
