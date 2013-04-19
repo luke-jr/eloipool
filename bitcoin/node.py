@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from .varlen import varlenEncode
+from .varlen import varlenDecode, varlenEncode
 import asynchat
 from binascii import b2a_hex
 from collections import deque
@@ -116,6 +116,20 @@ class BitcoinLink(networkserver.SocketHandler):
 		self.pushMessage('version', self.makeVersion())
 		self.sentVersion = True
 	
+	def doCmd_inv(self, payload):
+		(invCount, payload) = varlenDecode(payload)
+		for i in range(invCount):
+			invType = unpack('<I', payload[:4])[0]
+			invHash = payload[4:36]
+			payload = payload[36:]
+			method = 'doInv_%s' % (invType,)
+			if hasattr(self, method):
+				getattr(self, method)(invHash)
+	
+	def doInv_2(self, blkhash):  # MSG_BLOCK
+		self.logger.debug('Received block inv over p2p for %s' % (b2a_hex(blkhash[::-1]).decode('ascii'),))
+		self.server.newBlock(blkhash)
+	
 	def doCmd_version(self, payload):
 		# FIXME: check for loopbacks
 		self.pushVersion()
@@ -162,3 +176,6 @@ class BitcoinNode(networkserver.AsyncSocketServer):
 	def submitBlock(self, payload):
 		self._om.append(self.makeMessage('block', payload))
 		self.wakeup()
+	
+	def newBlock(self, blkhash):
+		pass

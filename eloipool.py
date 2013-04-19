@@ -66,6 +66,7 @@ def RaiseRedFlags(reason):
 from bitcoin.node import BitcoinLink, BitcoinNode
 bcnode = BitcoinNode(config.UpstreamNetworkId)
 bcnode.userAgent += b'Eloipool:0.1/'
+bcnode.newBlock = lambda blkhash: MM.updateMerkleTree()
 
 import jsonrpc
 
