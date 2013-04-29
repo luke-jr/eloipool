@@ -177,6 +177,8 @@ class StratumHandler(networkserver.SocketHandler):
 			'extranonce2': bytes.fromhex(extranonce2),
 			'ntime': bytes.fromhex(ntime),
 			'nonce': bytes.fromhex(nonce),
+			'userAgent': self.UA,
+			'submitProtocol': 'stratum',
 		}
 		if jobid in self.JobTargets:
 			share['target'] = self.JobTargets[jobid]

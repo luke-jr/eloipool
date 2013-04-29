@@ -77,6 +77,8 @@ class _getwork:
 			'_origdata' : datax,
 			'username': self.Username,
 			'remoteHost': self.remoteHost,
+			'userAgent': self.reqinfo.get('UA').decode('latin-1'),  # technically ASCII, but latin-1 ignores errors
+			'submitProtocol': 'getwork',
 		}
 		try:
 			self.server.receiveShare(share)
