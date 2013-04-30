@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Dependencies
 ------------
-Python 3			http://python.org
+Python 3.2+			http://python.org
 python-bitcoinrpc	https://github.com/jgarzik/python-bitcoinrpc
 python-base58		https://gitorious.org/bitcoin/python-base58
 
