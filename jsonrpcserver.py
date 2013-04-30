@@ -45,6 +45,10 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	def final_init(server):
 		pass
 	
+	def __init__(self, *a, **ka):
+		super().__init__(*a, **ka)
+		self.UA = None
+	
 	def sendReply(self, status=200, body=b'', headers=None, *a, **ka):
 		headers = dict(headers) if headers else {}
 		if body and body[0] == 123:  # b'{'
@@ -71,6 +75,7 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 	_MidstateNotAdv = (b'phoenix', b'poclbm', b'gminor')
 	def doHeader_user_agent(self, value):
 		self.reqinfo['UA'] = value
+		self.UA = value.decode('latin-1')  # technically ASCII, but latin-1 ignores errors
 		quirks = self.quirks
 		(UA, v, *x) = value.split(b'/', 1) + [None]
 		

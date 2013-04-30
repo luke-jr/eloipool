@@ -89,7 +89,7 @@ class _getmemorypool:
 			'blkdata': data[80:],
 			'username': self.Username,
 			'remoteHost': self.remoteHost,
-			'userAgent': self.reqinfo.get('UA').decode('latin-1'),  # technically ASCII, but latin-1 ignores errors
+			'userAgent': self.UA,
 			'submitProtocol': 'GMP',
 		}
 		try:
