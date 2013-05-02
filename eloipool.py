@@ -683,7 +683,8 @@ import sys
 from time import sleep
 import traceback
 
-SAVE_STATE_FILENAME = 'eloipool.worklog'
+if getattr(config, 'SaveStateFilename', None) is None:
+	config.SaveStateFilename = 'eloipool.worklog'
 
 def stopServers():
 	logger = logging.getLogger('stopServers')
@@ -726,7 +727,7 @@ def stopLoggers():
 		if hasattr(i, 'stop'):
 			i.stop()
 
-def saveState(t = None):
+def saveState(SAVE_STATE_FILENAME, t = None):
 	logger = logging.getLogger('saveState')
 	
 	# Then, save data needed to resume work
@@ -752,7 +753,7 @@ def exit():
 	t = time()
 	stopServers()
 	stopLoggers()
-	saveState(t)
+	saveState(config.SaveStateFilename, t=t)
 	logging.getLogger('exit').info('Goodbye...')
 	os.kill(os.getpid(), signal.SIGTERM)
 	sys.exit(0)
@@ -761,14 +762,14 @@ def restart():
 	t = time()
 	stopServers()
 	stopLoggers()
-	saveState(t)
+	saveState(config.SaveStateFilename, t=t)
 	logging.getLogger('restart').info('Restarting...')
 	try:
 		os.execv(sys.argv[0], sys.argv)
 	except:
 		logging.getLogger('restart').error('Failed to exec\n' + traceback.format_exc())
 
-def restoreState():
+def restoreState(SAVE_STATE_FILENAME):
 	if not os.path.exists(SAVE_STATE_FILENAME):
 		return
 	
@@ -913,7 +914,7 @@ if __name__ == "__main__":
 	
 	MM.start()
 	
-	restoreState()
+	restoreState(config.SaveStateFilename)
 	
 	prune_thr = threading.Thread(target=WorkLogPruner, args=(workLog,))
 	prune_thr.daemon = True
