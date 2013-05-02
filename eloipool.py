@@ -15,7 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import config
+import argparse
+import importlib
+argparser = argparse.ArgumentParser()
+argparser.add_argument('-c', '--config', help='Config name to load from config_<ARG>.py')
+args = argparser.parse_args()
+configmod = 'config'
+if not args.config is None:
+	configmod = 'config_%s' % (args.config,)
+config = importlib.import_module(configmod)
 
 if not hasattr(config, 'ServerName'):
 	config.ServerName = 'Unnamed Eloipool'
