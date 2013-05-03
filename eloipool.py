@@ -23,6 +23,7 @@ args = argparser.parse_args()
 configmod = 'config'
 if not args.config is None:
 	configmod = 'config_%s' % (args.config,)
+__import__(configmod)
 config = importlib.import_module(configmod)
 
 if not hasattr(config, 'ServerName'):
