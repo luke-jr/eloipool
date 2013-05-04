@@ -91,8 +91,16 @@ class shareLogFormatter:
 				# function
 				fn = m.group(1)
 				sf = self.get_field(m.group(2))
-				return getattr(self, 'get_field_%s' % (fn,))(sf)
+				gfm = 'get_field_%s' % (fn,)
+				if hasattr(self, gfm):
+					return getattr(self, gfm)(sf)
+				f = eval(fn)
+				return self._get_field_auto(f, sf)
 		raise ValueError('Failed to parse field: %s' % (field,))
+	
+	@classmethod
+	def _get_field_auto(self, f, subfunc):
+		return lambda s: f(subfunc(s))
 	
 	@classmethod
 	def get_field_not(self, subfunc):
@@ -105,18 +113,6 @@ class shareLogFormatter:
 	@classmethod
 	def get_field_dash(self, subfunc):
 		return lambda s: subfunc(s) or '-'
-	
-	@classmethod
-	def get_field_YN(self, subfunc):
-		return lambda s: YN(subfunc(s))
-	
-	@classmethod
-	def get_field_target2bdiff(self, subfunc):
-		return lambda s: target2bdiff(subfunc(s))
-	
-	@classmethod
-	def get_field_target2pdiff(self, subfunc):
-		return lambda s: target2pdiff(subfunc(s))
 
 def dblsha(b):
 	return sha256(sha256(b).digest()).digest()
