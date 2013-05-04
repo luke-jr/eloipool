@@ -34,6 +34,7 @@ class sql:
 		dbe = ka['engine']
 		if 'statement' not in ka:
 			_logger.warn('"statement" not specified for sql logger, but default may vary!')
+		self.exceptions = []
 		self.threadsafe = False
 		getattr(self, 'setup_%s' % (dbe,))()
 		if self.threadsafe:
@@ -48,7 +49,12 @@ class sql:
 	def _doInsert(self, o):
 		(stmt, params) = o
 		dbc = self.db.cursor()
-		dbc.execute(stmt, params)
+		try:
+			dbc.execute(stmt, params)
+		except BaseException as e:
+			_logger.critical('Error inserting data: %s%s' % ((stmt, params), traceback.format_exc()))
+			self.exceptions.append((stmt, params, e))
+			return
 		self.db.commit()
 	
 	def _thread(self):
