@@ -230,6 +230,20 @@ ShareLogging = (
 	},
 )
 
+# Authentication
+# There currently are 2 modules.
+# - allowall will allow every username/password combination
+# - simplefile will use the username/passwords from a file, which contains username<tab>password\n with no \n on the last line.
+Authentication =  (
+	{
+		'module': 'allowall',
+	},
+#	{
+#		'module': 'simplefile',
+#		'filename': 'userdatabase',
+#	},
+)
+
 ### Settings related to poolserver logging
 
 # By default, significant events will be printed to the interactive console
