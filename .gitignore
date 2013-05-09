@@ -11,3 +11,4 @@ midstate.so
 *.orig
 *.rej
 eloipool.worklog
+bitcoinrpc
