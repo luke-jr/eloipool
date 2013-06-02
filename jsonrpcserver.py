@@ -98,6 +98,9 @@ class JSONRPCHandler(httpserver.HTTPHandler):
 					quirks['NELH'] = None
 			else:
 				quirks['midstate'] = None
+
+		if UA == b'poclbm':
+			quirks['brokenstratum'] = True
 	
 	def doHeader_x_minimum_wait(self, value):
 		self.reqinfo['MinWait'] = int(value)

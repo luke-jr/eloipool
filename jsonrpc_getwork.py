@@ -33,6 +33,8 @@ class _getwork:
 		ShareTargetHex = '%064x' % (server.ShareTarget,)
 		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
 		JSONRPCHandler.getwork_rv_template['target'] = ShareTargetHexLE
+		if hasattr(server, 'XStratumHeader'):
+			JSONRPCHandler.XStratumHeader = server.XStratumHeader
 	
 	getwork_rv_template = {
 		'data': '000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000',
@@ -67,7 +69,10 @@ class _getwork:
 		rv['target'] = ShareTargetHexLE
 		
 		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
-		
+
+		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
+
 		return rv
 	
 	def doJSON_submitwork(self, datax):
@@ -80,6 +85,10 @@ class _getwork:
 			'userAgent': self.UA,
 			'submitProtocol': 'getwork',
 		}
+
+		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
+
 		try:
 			self.server.receiveShare(share)
 		except RejectedShare as rej:

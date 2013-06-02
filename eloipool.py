@@ -873,7 +873,11 @@ if __name__ == "__main__":
 	if hasattr(config, 'UpstreamBitcoindNode') and config.UpstreamBitcoindNode:
 		BitcoinLink(bcnode, dest=config.UpstreamBitcoindNode)
 	
-	import jsonrpc_getblocktemplate
+	# Make GBT optional
+	if hasattr(config, 'GBTMining'):
+		if config.GBTMining == True:
+			import jsonrpc_getblocktemplate
+
 	import jsonrpc_getwork
 	import jsonrpc_setworkaux
 	
@@ -890,6 +894,8 @@ if __name__ == "__main__":
 		LS.append(JSONRPCListener(server, a))
 	if hasattr(config, 'SecretUser'):
 		server.SecretUser = config.SecretUser
+	if hasattr(config, 'XStratumHeader'):
+		server.XStratumHeader = config.XStratumHeader
 	server.aux = MM.CoinbaseAux
 	server.getBlockHeader = getBlockHeader
 	server.getBlockTemplate = getBlockTemplate
