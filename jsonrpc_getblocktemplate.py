@@ -58,7 +58,7 @@ class _getblocktemplate:
 		except:
 			pass
 		
-		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+		if hasattr(self, 'XStratumHeader') and 'brokenstratum' not in self.quirks:
 			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
 
 		rv = dict(self.getblocktemplate_rv_template)
@@ -103,7 +103,7 @@ class _getblocktemplate:
 			'userAgent': self.UA,
 			'submitProtocol': 'GBT',
 		}
-		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+		if hasattr(self, 'XStratumHeader') and 'brokenstratum' not in self.quirks:
 			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
 		try:
 			self.server.receiveShare(share)

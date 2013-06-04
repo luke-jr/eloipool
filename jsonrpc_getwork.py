@@ -70,7 +70,7 @@ class _getwork:
 		
 		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
 
-		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+		if hasattr(self, 'XStratumHeader') and 'brokenstratum' not in self.quirks:
 			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
 
 		return rv
@@ -86,7 +86,7 @@ class _getwork:
 			'submitProtocol': 'getwork',
 		}
 
-		if hasattr(self, 'XStratumHeader') and self.quirks['brokenstratum'] != True:
+		if hasattr(self, 'XStratumHeader') and 'brokenstratum' not in self.quirks:
 			self._JSONHeaders['X-Stratum'] = self.XStratumHeader
 
 		try:
