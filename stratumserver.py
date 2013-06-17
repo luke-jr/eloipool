@@ -190,12 +190,9 @@ class StratumHandler(networkserver.SocketHandler):
 			raise StratumError(errno, rej, False)
 		return True
 	
-	def checkAuthentication(self, username, password):
-		return True
-	
 	def _stratum_mining_authorize(self, username, password = None):
 		try:
-			valid = self.checkAuthentication(username, password)
+			valid = self.server.checkAuthentication(username, password)
 		except:
 			valid = False
 		if valid:
@@ -229,6 +226,9 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self.JobId = '%d' % (time(),)
 		self.WakeRequest = None
 		self.UpdateTask = None
+	
+	def checkAuthentication(self, username, password):
+		return True
 	
 	def updateJob(self, wantClear = False):
 		if self.UpdateTask:

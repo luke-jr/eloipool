@@ -39,6 +39,9 @@ class SocketHandler:
 		self.logger.debug(traceback.format_exc())
 		self.handle_close()
 	
+	# NOTE: This function checks for socket-closed condition and calls handle_close
+	recv = asynchat.async_chat.recv
+	
 	def handle_read(self):
 		try:
 			data = self.recv (self.ac_in_buffer_size)
@@ -152,8 +155,6 @@ class SocketHandler:
 				self.close()
 				return
 			self.server.register_socket_m(self.fd, EPOLL_READ)
-	
-	recv = asynchat.async_chat.recv
 	
 	def close(self):
 		if self.wbuf:
