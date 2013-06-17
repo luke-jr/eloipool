@@ -48,8 +48,17 @@ class sql:
 	def _doInsert(self, o):
 		(stmt, params) = o
 		dbc = self.db.cursor()
-		dbc.execute(stmt, params)
-		self.db.commit()
+		try:
+			dbc.execute(stmt, params)
+		except:
+			_logger.critical("%s" % ( (stmt, params), ) )
+			raise
+		try:
+			self.db.commit()
+		except:
+			_logger.critical("commit: %s" % ( (stmt, params), ) )
+			raise
+
 	
 	def _thread(self):
 		self._connect()
