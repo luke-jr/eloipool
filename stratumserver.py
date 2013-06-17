@@ -203,7 +203,7 @@ class StratumHandler(networkserver.SocketHandler):
 			self.changeTask(self.requestStratumUA, 0)
 		return valid
 	
-	def _stratum_mining_get_transactions(self, jobid):
+	def _stratum_mining_xget_transactions(self, jobid):
 		try:
 			(MC, wld) = self.server.getExistingStratumJob(jobid)
 		except KeyError as e:
