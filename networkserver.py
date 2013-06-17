@@ -153,8 +153,6 @@ class SocketHandler:
 				return
 			self.server.register_socket_m(self.fd, EPOLL_READ)
 	
-	# Note that this causes async core to handle closed sockets and calls
-	# our handle_close function appropriately -wk
 	recv = asynchat.async_chat.recv
 	
 	def close(self):
