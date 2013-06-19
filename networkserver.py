@@ -137,8 +137,28 @@ class SocketHandler:
 				bs = 0
 			data = data[bs:]
 			if not len(data):
+				# reset timeout for write buffer
+				self.wbuftime = 0
+				self.wbufhigh = 0
 				return
 		self.wbuf += data
+		if len(self.wbuf) > 16384 and len(self.wbuf) >= self.wbufhigh:
+			self.wbufhigh = len(self.wbuf)
+			if not self.wbuftime:
+				# Five minutes seems like a fair timeout...
+				self.wbuftime = time() + 300
+			elif self.wbuftime < time():
+				# We should kill off this socket for having it's write buffer increase for too long
+				self.wbuftimeouts += 1
+				self.logger.debug(("Closing hung socket IP=%s with wbuf size %d (attempt %d)" % (self.remoteHost, len(self.wbuf), self.wbuftimeouts)))
+				# give it 5 minutes
+				self.wbuftime = time() + 300
+				# empty the buffer here to be safe in case something else is making this socket hang
+				# so we dont keep eating memory...
+				self.wbuf = b''
+				self.wbufhigh = 0
+				self.socket.shutdown(2)
+				return
 		self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
 	
 	def handle_timeout(self):
@@ -154,6 +174,8 @@ class SocketHandler:
 			if self.closeme:
 				self.close()
 				return
+			self.wbuftime = 0
+			self.wbufhigh = 0
 			self.server.register_socket_m(self.fd, EPOLL_READ)
 	
 	def close(self):
@@ -187,6 +209,9 @@ class SocketHandler:
 		self.ac_in_buffer = b''
 		self.incoming = []
 		self.wbuf = b''
+		self.wbuftime = 0
+		self.wbufhigh = 0
+		self.wbuftimeouts = 0
 		self.closeme = False
 		self.server = server
 		self.socket = sock
