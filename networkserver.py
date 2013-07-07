@@ -156,6 +156,14 @@ class SocketHandler:
 				return
 			self.server.register_socket_m(self.fd, EPOLL_READ)
 	
+	def _unlink(self):
+		try:
+			del self.server.connections[id(self)]
+		except:
+			pass
+		self.server.unregister_socket(self.fd)
+		tryErr(self.server.rmSchedule, self._Task, IgnoredExceptions=KeyError)
+	
 	def close(self):
 		if self.wbuf:
 			self.closeme = True
@@ -163,12 +171,8 @@ class SocketHandler:
 		if self.fd == -1:
 			# Already closed
 			return
-		try:
-			del self.server.connections[id(self)]
-		except:
-			pass
-		self.server.unregister_socket(self.fd)
-		self.changeTask(None)
+		self._unlink()
+		self._Task = None
 		self.socket.close()
 		self.fd = -1
 	
@@ -281,6 +285,15 @@ class _Waker:
 			self.logger.error('Got EOF on socket')
 		self.logger.debug('Read wakeup')
 
+def fd_is_socket(fd):
+	try:
+		epoll = select.epoll()
+		epoll.register(fd, EPOLL_READ)
+		epoll.unregister(fd)
+		return True
+	except:
+		return False
+
 class AsyncSocketServer:
 	logger = logging.getLogger('SocketServer')
 	
@@ -364,6 +377,9 @@ class AsyncSocketServer:
 		for c in conns:
 			tryErr(lambda: c.boot())
 	
+	def shutdown(self):
+		pass
+	
 	def serve_forever(self):
 		self.running = True
 		self.final_init()
@@ -426,5 +442,6 @@ class AsyncSocketServer:
 				except:
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_error)
+		self.shutdown()
 		self.doing = None
 		self.running = False

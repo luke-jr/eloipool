@@ -20,6 +20,8 @@ from copy import deepcopy
 import json
 import logging
 import networkserver
+import os
+import pickle
 import socket
 import struct
 from time import time
@@ -40,6 +42,8 @@ StratumCodes = {
 	'high-hash': 23,
 }
 
+_exported_sockets = []
+
 class StratumHandler(networkserver.SocketHandler):
 	logger = logging.getLogger('StratumHandler')
 	
@@ -52,6 +56,42 @@ class StratumHandler(networkserver.SocketHandler):
 		self.lastBDiff = None
 		self.JobTargets = collections.OrderedDict()
 		self.UA = None
+	
+	def _export(self):
+		if hasattr(self, '_sid'):
+			UniqueSessionIdManager.put(self._sid, delay=True)
+		self._unlink()
+		
+		data = self.__dict__
+		_exported_sockets.append(data['socket'])  # Or the destructor will close the socket on us :(
+		del data['socket']
+		del data['server']
+		if data.get('_Task'): data['_Task'] = data['_Task'].__func__.__name__
+		
+		data = pickle.dumps(data)
+		return data
+	
+	@classmethod
+	def _import(cls, server, data):
+		data = pickle.loads(data)
+		sock = socket.fromfd(data['fd'], socket.AF_INET6, socket.SOCK_STREAM)
+		
+		# Python dups the fd we give it, so close the old one and use the new one
+		os.close(data['fd'])
+		data['fd'] = sock.fileno()
+		
+		self = cls(server, sock, data['addr'])
+		self.__dict__ = data
+		self.server = server
+		self.socket = sock
+		if getattr(self, '_Task', None): self.changeTask(getattr(self, self._Task), 0)
+		if hasattr(self, '_sid'):
+			try:
+				UniqueSessionIdManager.getSpecific(self._sid, unlimited=True)
+			except KeyError:
+				del self._sid
+				self.logger.error('Failed to restore same session id, disconnecting')
+				self.boot()
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
@@ -166,14 +206,17 @@ class StratumHandler(networkserver.SocketHandler):
 			4,
 		]
 	
-	def close(self):
-		if hasattr(self, '_sid'):
-			UniqueSessionIdManager.put(self._sid)
-			delattr(self, '_sid')
+	def _unlink(self):
 		try:
 			del self.server._Clients[id(self)]
 		except:
 			pass
+		super()._unlink()
+	
+	def close(self):
+		if hasattr(self, '_sid'):
+			UniqueSessionIdManager.put(self._sid)
+			delattr(self, '_sid')
 		super().close()
 	
 	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
@@ -236,6 +279,24 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self.JobId = '%d' % (time(),)
 		self.WakeRequest = None
 		self.UpdateTask = None
+	
+	def shutdown(self):
+		if hasattr(self, 'sessiondata') and self.connections:
+			# Export all active handlers
+			hlist = list(self.connections.values())
+			for h in hlist:
+				data = h._export()
+				self.sessiondata.append(data)
+	
+	def _restoresession(self, sessiondata):
+		if not sessiondata:
+			return
+		if not os.environ.get('__ELOIPOOL_EXECD'):
+			self.logger.warning('Ignoring saved socket data (not launched by restart func)')
+			return
+		for data in sessiondata:
+			self.RequestHandlerClass._import(self, data)
+		self.logger.info('Restored %s active sockets' % (len(sessiondata),))
 	
 	def checkAuthentication(self, username, password):
 		return True

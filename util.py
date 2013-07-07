@@ -270,7 +270,7 @@ class _UniqueSessionIdManager:
 		raise IndexError('Ran out of session ids')
 	
 	# NOTE: Will steal a pending-free sid
-	def getSpecific(self, desired):
+	def getSpecific(self, desired, unlimited = False):
 		try:
 			self._FreeIDs.remove(desired)
 			return desired
@@ -283,10 +283,13 @@ class _UniqueSessionIdManager:
 				del self._schPut[desired]
 				return desired
 		
-		# NOTE: Generated growth is limited to avoid memory exhaustion exploits
 		with self._NextID_Lock:
 			NextID = self._NextID
-			if desired >= NextID and desired <= min(self._max, NextID + 0x10000 - len(self._FreeIDs)):
+			realmax = self._max
+			if not unlimited:
+				# NOTE: Generated growth is limited to avoid memory exhaustion exploits
+				realmax = min(realmax, NextID + 0x10000 - len(self._FreeIDs))
+			if desired >= NextID and desired <= realmax:
 				# NOTE: Incrementing _NextID up front in case of exception
 				self._NextID = desired + 1
 				for i in range(NextID, desired):

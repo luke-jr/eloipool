@@ -701,7 +701,7 @@ import traceback
 if getattr(config, 'SaveStateFilename', None) is None:
 	config.SaveStateFilename = 'eloipool.worklog'
 
-def stopServers():
+def stopServers(sessiondata = None):
 	logger = logging.getLogger('stopServers')
 	
 	if hasattr(stopServers, 'already'):
@@ -710,8 +710,10 @@ def stopServers():
 	stopServers.already = True
 	
 	logger.info('Stopping servers...')
-	global bcnode, server
+	global bcnode, server, stratumsrv
 	servers = (bcnode, server, stratumsrv)
+	if not sessiondata is None:
+		stratumsrv.sessiondata = []
 	for s in servers:
 		s.keepgoing = False
 	for s in servers:
@@ -736,13 +738,16 @@ def stopServers():
 	for s in servers:
 		for fd in s._fd.keys():
 			os.close(fd)
+	
+	if not sessiondata is None:
+		sessiondata['stratumsrv'] = stratumsrv.sessiondata
 
 def stopLoggers():
 	for i in loggersShare:
 		if hasattr(i, 'stop'):
 			i.stop()
 
-def saveState(SAVE_STATE_FILENAME, t = None):
+def saveState(SAVE_STATE_FILENAME, t = None, sessiondata = None):
 	logger = logging.getLogger('saveState')
 	
 	# Then, save data needed to resume work
@@ -750,6 +755,7 @@ def saveState(SAVE_STATE_FILENAME, t = None):
 	i = 0
 	while True:
 		try:
+			if sessiondata: DupeShareHACK['__sessiondata'] = sessiondata
 			with open(SAVE_STATE_FILENAME, 'wb') as f:
 				pickle.dump(t, f)
 				pickle.dump(DupeShareHACK, f)
@@ -763,6 +769,10 @@ def saveState(SAVE_STATE_FILENAME, t = None):
 					os.unlink(SAVE_STATE_FILENAME)
 				except:
 					logger.error(('Failed to unlink \'%s\'; resume may have trouble\n' % (SAVE_STATE_FILENAME,)) + traceback.format_exc())
+	try:
+		del DupeShareHACK['__sessiondata']
+	except KeyError:
+		pass
 
 def exit():
 	t = time()
@@ -775,10 +785,12 @@ def exit():
 
 def restart():
 	t = time()
-	stopServers()
+	sessiondata = {}
+	stopServers(sessiondata)
 	stopLoggers()
-	saveState(config.SaveStateFilename, t=t)
+	saveState(config.SaveStateFilename, t=t, sessiondata=sessiondata)
 	logging.getLogger('restart').info('Restarting...')
+	os.environ['__ELOIPOOL_EXECD'] = '1'
 	try:
 		os.execv(sys.argv[0], sys.argv)
 	except:
@@ -814,6 +826,14 @@ def restoreState(SAVE_STATE_FILENAME):
 				else:
 					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
+					
+					if '__sessiondata' in DupeShareHACK:
+						# Current format, from 2013-07-07 onward
+						sessiondata = DupeShareHACK['__sessiondata']
+						del DupeShareHACK['__sessiondata']
+						
+						if 'stratumsrv' in sessiondata:
+							stratumsrv._restoresession(sessiondata['stratumsrv'])
 				
 				if t + 120 >= time():
 					workLog = pickle.load(f)
