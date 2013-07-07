@@ -24,7 +24,7 @@ import socket
 import struct
 from time import time
 import traceback
-from util import RejectedShare, swap32, target2bdiff
+from util import RejectedShare, swap32, target2bdiff, UniqueSessionIdManager
 
 class StratumError(BaseException):
 	def __init__(self, errno, msg, tb = True):
@@ -145,7 +145,9 @@ class StratumHandler(networkserver.SocketHandler):
 		self.UA = rpc.get('result') or rpc
 	
 	def _stratum_mining_subscribe(self):
-		xid = struct.pack('@P', id(self))
+		if not hasattr(self, '_sid'):
+			self._sid = UniqueSessionIdManager.get()
+		xid = struct.pack('=I', self._sid)  # NOTE: Assumes sessionids are 4 bytes
 		self.extranonce1 = xid
 		xid = b2a_hex(xid).decode('ascii')
 		self.server._Clients[id(self)] = self
@@ -160,6 +162,9 @@ class StratumHandler(networkserver.SocketHandler):
 		]
 	
 	def close(self):
+		if hasattr(self, '_sid'):
+			UniqueSessionIdManager.put(self._sid)
+			delattr(self, '_sid')
 		try:
 			del self.server._Clients[id(self)]
 		except:
@@ -215,7 +220,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 	waker = True
 	schMT = True
 	
-	extranonce1null = struct.pack('@P', 0)
+	extranonce1null = struct.pack('=I', 0)  # NOTE: Assumes sessionids are 4 bytes
 	
 	def __init__(self, *a, **ka):
 		ka.setdefault('RequestHandlerClass', StratumHandler)

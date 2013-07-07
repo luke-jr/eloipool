@@ -208,3 +208,36 @@ class WithNoop:
 	def __exit__(self, *a):
 		pass
 WithNoop = WithNoop()
+
+
+from collections import deque
+import threading
+
+class _UniqueSessionIdManager:
+	def __init__(self, size = 4):
+		self._NextID = 0
+		self._NextID_Lock = threading.Lock()
+		self._FreeIDs = deque()
+		self._size = size
+		self._max = (0x100 ** size) - 1
+	
+	def size(self):
+		return self._size
+	
+	def put(self, sid):
+		self._FreeIDs.append(sid)
+	
+	def get(self):
+		try:
+			return self._FreeIDs.popleft()
+		except IndexError:
+			pass
+		
+		with self._NextID_Lock:
+			sid = self._NextID
+			self._NextID = sid + 1
+		if sid > self._max:
+			raise IndexError('Ran out of session ids')
+		return sid
+
+UniqueSessionIdManager = _UniqueSessionIdManager()
