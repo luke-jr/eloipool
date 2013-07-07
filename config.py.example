@@ -59,6 +59,8 @@ IdleSleepTime = 0.1
 TrackerAddr = 'mrsP7M31efGkQHXb7nRiWLDjfV2M8oakf2'  # testnet
 
 # Coinbaser command to control reward delegation
+# %d is replaced with the total value of the block reward (in satoshis)
+# %p is replaced with the previous block hash in hexadecimal
 # NOTE: This example donates 1% of block rewards to Luke-Jr for Eloipool development
 CoinbaserCmd = 'echo -e "1\\n$((%d / 100))\\n1579aXhdwvKZEMrAKoCZhzGuqMa8EonuXU"'
 

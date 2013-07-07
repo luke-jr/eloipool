@@ -90,11 +90,12 @@ except:
 from bitcoin.script import BitcoinScript
 from bitcoin.txn import Txn
 from base58 import b58decode
+from binascii import b2a_hex
 from struct import pack
 import subprocess
 from time import time
 
-def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
+def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
 	txn = Txn.new()
 	
 	if useCoinbaser and hasattr(config, 'CoinbaserCmd') and config.CoinbaserCmd:
@@ -102,6 +103,7 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
 		try:
 			cmd = config.CoinbaserCmd
 			cmd = cmd.replace('%d', str(coinbaseValue))
+			cmd = cmd.replace('%p', prevBlockHex or '""')
 			p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
 			nout = int(p.stdout.readline())
 			for i in range(nout):
