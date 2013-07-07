@@ -60,6 +60,7 @@ class StratumHandler(networkserver.SocketHandler):
 	def _export(self):
 		if hasattr(self, '_sid'):
 			UniqueSessionIdManager.put(self._sid, delay=True)
+		subscribed = id(self) in self.server._Clients
 		self._unlink()
 		
 		data = self.__dict__
@@ -67,6 +68,7 @@ class StratumHandler(networkserver.SocketHandler):
 		del data['socket']
 		del data['server']
 		if data.get('_Task'): data['_Task'] = data['_Task'].__func__.__name__
+		if not subscribed: data['_not_subscribed'] = None
 		
 		data = pickle.dumps(data)
 		return data
@@ -92,6 +94,9 @@ class StratumHandler(networkserver.SocketHandler):
 				del self._sid
 				self.logger.error('Failed to restore same session id, disconnecting')
 				self.boot()
+		if hasattr(self, '_not_subscribed'):
+			del self._not_subscribed
+			self.server._Clients[id(self)] = self
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
