@@ -649,6 +649,10 @@ def logShare(share):
 		i.logShare(share)
 
 def checkAuthentication(username, password):
+	# HTTPServer uses bytes, and StratumServer uses str
+	if hasattr(username, 'decode'): username = username.decode('utf8')
+	if hasattr(password, 'decode'): password = password.decode('utf8')
+	
 	for i in authenticators:
 		if i.checkAuthentication(username, password):
 			return True

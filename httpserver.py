@@ -115,6 +115,9 @@ class HTTPHandler(networkserver.SocketHandler):
 		if b'gzip' in value:
 			self.quirks['gzip'] = True
 	
+	def checkAuthentication(self, *a, **ka):
+		return self.server.checkAuthentication(*a, **ka)
+	
 	def doHeader_authorization(self, value):
 		value = value.split(b' ')
 		if len(value) != 2 or value[0] != b'Basic':
