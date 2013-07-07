@@ -375,7 +375,7 @@ class merkleMaker(threading.Thread):
 		
 		self._makeBlockSafe(MP, txnlist, txninfo)
 		
-		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'])
+		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnlist.insert(0, cbtxn.data)
@@ -788,7 +788,7 @@ def _test():
 	txninfo[2]['fee'] = 0
 	assert MBS(1) == (MP, txnlist, txninfo)
 	# _ProcessGBT tests
-	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True):
+	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
 		txn = Txn.new()
 		txn.addOutput(coinbaseValue, b'')
 		return txn
