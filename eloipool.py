@@ -197,7 +197,7 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
+from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2avghashes, target2bdiff, target2pdiff
 import jsonrpc
 import traceback
 
@@ -258,7 +258,9 @@ def getTarget(username, now, DTMode = None, RequestedTarget = None):
 		RequestedTarget = clampTarget(RequestedTarget, DTMode)
 		userStatus[username] = [RequestedTarget, now, 0]
 		return RequestedTarget
-	(targetIn, lastUpdate, work) = status
+	(targetIn, lastUpdate, hashes) = status
+	target = targetIn or config.ShareTarget
+	work = hashes / target2avghashes(target)
 	if work <= config.DynamicTargetGoal:
 		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
 			# No reason to change it just yet
@@ -271,7 +273,6 @@ def getTarget(username, now, DTMode = None, RequestedTarget = None):
 			return clampTarget(None, DTMode)
 	
 	deltaSec = now - lastUpdate
-	target = targetIn or config.ShareTarget
 	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
 	target = clampTarget(target, DTMode)
 	if target != targetIn:
@@ -612,12 +613,7 @@ def checkShare(share):
 	
 	if config.DynamicTargetting and username in userStatus:
 		# NOTE: userStatus[username] only doesn't exist across restarts
-		status = userStatus[username]
-		target = status[0] or config.ShareTarget
-		if target == workTarget:
-			userStatus[username][2] += 1
-		else:
-			userStatus[username][2] += float(target) / workTarget
+		userStatus[username][2] += target2avghashes(workTarget)
 	
 	if moden:
 		cbpre = workCoinbase

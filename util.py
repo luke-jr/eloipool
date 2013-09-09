@@ -32,6 +32,12 @@ def _maybe_int(n):
 		return n_int
 	return n
 
+def target2avghashes(target):
+	if target is None:
+		return None
+	return _maybe_int(target2avghashes._factor / target)
+target2avghashes._factor = 2**256
+
 def target2pdiff(target):
 	if target is None:
 		return None
