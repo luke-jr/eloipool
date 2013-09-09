@@ -940,6 +940,7 @@ if __name__ == "__main__":
 	stratumsrv.defaultTarget = config.ShareTarget
 	stratumsrv.IsJobValid = IsJobValid
 	stratumsrv.checkAuthentication = checkAuthentication
+	stratumsrv.clampTarget = lambda x: clampTarget(x, config.DynamicTargetting)
 	if not hasattr(config, 'StratumAddresses'):
 		config.StratumAddresses = ()
 	for a in config.StratumAddresses:

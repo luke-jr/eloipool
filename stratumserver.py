@@ -52,6 +52,7 @@ class StratumHandler(networkserver.SocketHandler):
 		self.lastBDiff = None
 		self.JobTargets = collections.OrderedDict()
 		self.UA = None
+		self.RequestedTarget = None
 	
 	def sendReply(self, ob):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
@@ -114,11 +115,12 @@ class StratumHandler(networkserver.SocketHandler):
 		})
 	
 	def sendJob(self):
-		target = self.server.defaultTarget
 		if len(self.Usernames) == 1:
-			dtarget = self.server.getTarget(next(iter(self.Usernames)), time())
-			if not dtarget is None:
-				target = dtarget
+			target = self.server.getTarget(next(iter(self.Usernames)), time(), RequestedTarget=self.RequestedTarget)
+		else:
+			target = self.server.clampTarget(self.RequestedTarget)
+		if target is None:
+			target = self.server.defaultTarget
 		bdiff = target2bdiff(target)
 		if self.lastBDiff != bdiff:
 			self.sendReply({
@@ -143,6 +145,9 @@ class StratumHandler(networkserver.SocketHandler):
 	
 	def _stratumreply_7(self, rpc):
 		self.UA = rpc.get('result') or rpc
+	
+	def _stratum_mining_suggest_target(self, targethex, *a):
+		self.RequestedTarget = int(targethex, 16)
 	
 	def _stratum_mining_subscribe(self, UA = None, xid = None):
 		if not UA is None:
