@@ -71,7 +71,7 @@ class StratumHandler(networkserver.SocketHandler):
 			return
 		if 'method' not in rpc:
 			# Assume this is a reply to our request
-			funcname = '_stratumreply_%s' % (rpc['id'],)
+			funcname = 'stratumreply_%s' % (rpc['id'],)
 			if not hasattr(self, funcname):
 				return
 			try:
@@ -79,7 +79,7 @@ class StratumHandler(networkserver.SocketHandler):
 			except BaseException as e:
 				self.logger.debug(traceback.format_exc())
 			return
-		funcname = '_stratum_%s' % (rpc['method'].replace('.', '_'),)
+		funcname = 'stratum_%s' % (rpc['method'].replace('.', '_'),)
 		if not hasattr(self, funcname):
 			self.sendReply({
 				'error': [-3, "Method '%s' not found" % (rpc['method'],), None],
@@ -143,13 +143,13 @@ class StratumHandler(networkserver.SocketHandler):
 			'params': (),
 		})
 	
-	def _stratumreply_7(self, rpc):
+	def stratumreply_7(self, rpc):
 		self.UA = rpc.get('result') or rpc
 	
-	def _stratum_mining_suggest_target(self, targethex, *a):
+	def stratum_mining_suggest_target(self, targethex, *a):
 		self.RequestedTarget = int(targethex, 16)
 	
-	def _stratum_mining_subscribe(self, UA = None, xid = None):
+	def stratum_mining_subscribe(self, UA = None, xid = None):
 		if not UA is None:
 			self.UA = UA
 		if not hasattr(self, '_sid'):
@@ -181,7 +181,7 @@ class StratumHandler(networkserver.SocketHandler):
 			pass
 		super().close()
 	
-	def _stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
+	def stratum_mining_submit(self, username, jobid, extranonce2, ntime, nonce):
 		if username not in self.Usernames:
 			raise StratumError(24, 'unauthorized-user', False)
 		share = {
@@ -205,7 +205,7 @@ class StratumHandler(networkserver.SocketHandler):
 			raise StratumError(errno, rej, False)
 		return True
 	
-	def _stratum_mining_authorize(self, username, password = None):
+	def stratum_mining_authorize(self, username, password = None):
 		try:
 			valid = self.server.checkAuthentication(username, password)
 		except:
@@ -215,7 +215,7 @@ class StratumHandler(networkserver.SocketHandler):
 			self.changeTask(self.requestStratumUA, 0)
 		return valid
 	
-	def _stratum_mining_get_transactions(self, jobid):
+	def stratum_mining_get_transactions(self, jobid):
 		try:
 			(MC, wld) = self.server.getExistingStratumJob(jobid)
 		except KeyError as e:
