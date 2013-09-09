@@ -182,9 +182,8 @@ def clampTarget(target, DTMode):
 	if target is None or target > config.ShareTarget:
 		target = config.ShareTarget
 	
-	# Never target above the network, as we'd lose blocks
-	if target < networkTarget:
-		target = networkTarget
+	# Never target above upstream(s), as we'd lose blocks
+	target = max(target, networkTarget, config.GotWorkTarget)
 	
 	if DTMode == 2:
 		# Ceil target to a power of two :)
