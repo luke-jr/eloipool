@@ -47,7 +47,7 @@ if len(rootlogger.handlers) == 0:
 	)
 	for infoOnly in (
 		'checkShare',
-		'getTarget',
+		'DyntargetManager',
 		'JSONRPCHandler',
 		'JSONRPCServer',
 		'merkleMaker',
@@ -128,11 +128,13 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
 	return txn
 
 
+import dyntarget
 import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
-userStatus = {}
+Dyntarget = dyntarget.DyntargetManager()
+Dyntarget.__dict__.update(config.__dict__)
 networkTarget = None
 DupeShareHACK = {}
 
@@ -149,6 +151,7 @@ def blockChanged():
 		networkTarget = None
 	else:
 		networkTarget = Bits2Target(bits)
+		Dyntarget.minTarget = networkTarget
 	if MM.lastBlock != (None, None, None):
 		global DupeShareHACK
 		DupeShareHACK = {}
@@ -197,7 +200,7 @@ from merklemaker import MakeBlockHeader
 from struct import pack, unpack
 import threading
 from time import time
-from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2avghashes, target2bdiff, target2pdiff
+from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32
 import jsonrpc
 import traceback
 
@@ -221,85 +224,11 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
-def clampTarget(target, DTMode):
-	# ShareTarget is the minimum
-	if target is None or target > config.ShareTarget:
-		target = config.ShareTarget
-	
-	# Never target above the network, as we'd lose blocks
-	if target < networkTarget:
-		target = networkTarget
-	
-	if DTMode == 2:
-		# Ceil target to a power of two :)
-		truebits = log(target, 2)
-		if target <= 2**int(truebits):
-			# Workaround for bug in Python's math.log function
-			truebits = int(truebits)
-		target = 2**ceil(truebits) - 1
-	elif DTMode == 3:
-		# Round target to multiple of bdiff 1
-		target = bdiff1target / int(round(target2bdiff(target)))
-	
-	# Return None for ShareTarget to save memory
-	if target == config.ShareTarget:
-		return None
-	return target
-
-def getTarget(username, now, DTMode = None, RequestedTarget = None):
-	if DTMode is None:
-		DTMode = config.DynamicTargetting
-	if not DTMode:
-		return None
-	if username in userStatus:
-		status = userStatus[username]
-	else:
-		# No record, use default target
-		RequestedTarget = clampTarget(RequestedTarget, DTMode)
-		userStatus[username] = [RequestedTarget, now, 0]
-		return RequestedTarget
-	(targetIn, lastUpdate, hashes) = status
-	target = targetIn or config.ShareTarget
-	work = hashes / target2avghashes(target)
-	if work <= config.DynamicTargetGoal:
-		if now < lastUpdate + config.DynamicTargetWindow and (targetIn is None or targetIn >= networkTarget):
-			# No reason to change it just yet
-			return clampTarget(targetIn, DTMode)
-		if not work:
-			# No shares received, reset to minimum
-			if targetIn:
-				getTarget.logger.debug("No shares from %s, resetting to minimum target" % (repr(username),))
-				userStatus[username] = [None, now, 0]
-			return clampTarget(None, DTMode)
-	
-	deltaSec = now - lastUpdate
-	target = int(target * config.DynamicTargetGoal * deltaSec / config.DynamicTargetWindow / work)
-	target = clampTarget(target, DTMode)
-	if target != targetIn:
-		pfx = 'Retargetting %s' % (repr(username),)
-		tin = targetIn or config.ShareTarget
-		getTarget.logger.debug("%s from: %064x (pdiff %s)" % (pfx, tin, target2pdiff(tin)))
-		tgt = target or config.ShareTarget
-		getTarget.logger.debug("%s   to: %064x (pdiff %s)" % (pfx, tgt, target2pdiff(tgt)))
-	userStatus[username] = [target, now, 0]
-	return target
-getTarget.logger = logging.getLogger('getTarget')
-
-def TopTargets(n = 0x10):
-	tmp = list(k for k, v in userStatus.items() if not v[0] is None)
-	tmp.sort(key=lambda k: -userStatus[k][0])
-	tmp2 = {}
-	def t2d(t):
-		if t not in tmp2:
-			tmp2[t] = target2pdiff(t)
-		return tmp2[t]
-	for k in tmp[-n:]:
-		tgt = userStatus[k][0]
-		print('%-34s %064x %3d' % (k, tgt, t2d(tgt)))
+TopTargets = Dyntarget.TopTargets
 
 def RegisterWork(username, wli, wld, RequestedTarget = None):
 	now = time()
-	target = getTarget(username, now, RequestedTarget=RequestedTarget)
+	target = Dyntarget.getTarget(username, now, RequestedTarget=RequestedTarget)
 	wld = tuple(wld) + (target,)
 	workLog.setdefault(username, {})[wli] = (wld, now)
 	return target or config.ShareTarget
@@ -348,6 +277,7 @@ RBPs = []
 from bitcoin.varlen import varlenEncode, varlenDecode
 import bitcoin.txn
 from merklemaker import assembleBlock
+from util import target2avghashes
 
 if not hasattr(config, 'BlockSubmissions'):
 	config.BlockSubmissions = None
@@ -611,9 +541,7 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	if config.DynamicTargetting and username in userStatus:
-		# NOTE: userStatus[username] only doesn't exist across restarts
-		userStatus[username][2] += target2avghashes(workTarget)
+	Dyntarget.workCompleted(username, target2avghashes(workTarget))
 	
 	if moden:
 		cbpre = workCoinbase
@@ -932,11 +860,11 @@ if __name__ == "__main__":
 	stratumsrv.getExistingStratumJob = getExistingStratumJob
 	stratumsrv.receiveShare = receiveShare
 	stratumsrv.RaiseRedFlags = RaiseRedFlags
-	stratumsrv.getTarget = getTarget
+	stratumsrv.getTarget = Dyntarget.getTarget
 	stratumsrv.defaultTarget = config.ShareTarget
 	stratumsrv.IsJobValid = IsJobValid
 	stratumsrv.checkAuthentication = checkAuthentication
-	stratumsrv.clampTarget = lambda x: clampTarget(x, config.DynamicTargetting)
+	stratumsrv.clampTarget = lambda x: Dyntarget.clampTarget(x, config.DynamicTargetting)
 	if not hasattr(config, 'StratumAddresses'):
 		config.StratumAddresses = ()
 	for a in config.StratumAddresses:
