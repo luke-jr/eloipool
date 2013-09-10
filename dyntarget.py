@@ -146,23 +146,15 @@ class DyntargetClient(networkserver.SocketHandler):
 		self.changeTask(None)
 		self.reset_process()
 	
-	def close(self):
-		try:
-			raise None
-		except:
-			print(traceback.format_exc())
-	
 	def reset_process(self):
 		self.process_data = self.process_targets
 		self.set_terminator(65)
-		print("RESET")
 	
 	def process_targets(self, inbuf):
 		assert inbuf[0:1] == b'\1'
 		nl = struct.unpack('!8Q', inbuf[1:])
 		self.maxtarget = (nl[0] << 192) | (nl[1] << 128) | (nl[2] << 64) | nl[3]
 		self.deftarget = (nl[4] << 192) | (nl[5] << 128) | (nl[6] << 64) | nl[7]
-		print("Got targets")
 		
 		self.process_data = self.process_username
 		self.set_terminator(b'\0')
@@ -170,7 +162,6 @@ class DyntargetClient(networkserver.SocketHandler):
 	def process_username(self, inbuf):
 		busername = inbuf
 		username = busername.decode('utf8')
-		print("Got username %s"% (username,))
 		rv = (self.maxtarget, self.deftarget)
 		self.UsMgr.setTargetLimits(username, *rv)
 		wf = self.waitingfor.get(username)
@@ -217,7 +208,6 @@ class DyntargetManagerRemote(DyntargetManager):
 		pkt = b'\0' + struct.pack('!Q', int(hashes)) + busername + b'\0'
 		rq = queue.Queue(1)
 		self.client.waitingfor.setdefault(username, []).append(rq)
-		print("Waiting... %s" % (username,))
 		self.client.push(pkt)
 		
 		rv = rq.get(timeout=1)
