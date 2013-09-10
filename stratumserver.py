@@ -107,6 +107,9 @@ class StratumHandler(networkserver.SocketHandler):
 				self.logger.debug(fexc)
 			return
 		
+		if rpc['id'] is None:
+			return
+		
 		self.sendReply({
 			'error': None,
 			'id': rpc['id'],
