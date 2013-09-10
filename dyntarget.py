@@ -146,7 +146,7 @@ class DyntargetClient(networkserver.SocketHandler):
 	def process_targets(self, inbuf):
 		assert inbuf[0:1] == b'\1'
 		nl = struct.unpack('!8Q', inbuf[1:])
-		self.mintarget = (nl[0] << 192) | (nl[1] << 128) | (nl[2] << 64) | nl[3]
+		self.maxtarget = (nl[0] << 192) | (nl[1] << 128) | (nl[2] << 64) | nl[3]
 		self.deftarget = (nl[4] << 192) | (nl[5] << 128) | (nl[6] << 64) | nl[7]
 		print("Got targets")
 		
@@ -157,7 +157,7 @@ class DyntargetClient(networkserver.SocketHandler):
 		busername = inbuf
 		username = busername.decode('utf8')
 		print("Got username %s"% (username,))
-		rv = (self.mintarget, self.deftarget)
+		rv = (self.maxtarget, self.deftarget)
 		self.UsMgr.setTargetLimits(username, *rv)
 		wf = self.waitingfor.get(username)
 		if wf:
@@ -206,8 +206,8 @@ class DyntargetManagerRemote(DyntargetManager):
 		print("Waiting... %s" % (username,))
 		self.client.push(pkt)
 		
-		(mintarget, deftarget) = rq.get(timeout=1)
-		target = self.clampTarget(mintarget, self.DynamicTargetting)
+		(maxtarget, deftarget) = rq.get(timeout=1)
+		target = self.clampTarget(maxtarget, self.DynamicTargetting)
 		self.userStatus[username] = [target, now, 0]
 		
 		return target
@@ -222,8 +222,8 @@ class DyntargetManagerRemote(DyntargetManager):
 		target = self.userStatus.get(username, (None,))[0]
 		return self.clampTarget(target, self.DynamicTargetting)
 	
-	def setTargetLimits(self, username, mintarget, deftarget):
-		target = self.clampTarget(mintarget, self.DynamicTargetting)
+	def setTargetLimits(self, username, maxtarget, deftarget):
+		target = self.clampTarget(maxtarget, self.DynamicTargetting)
 		if username not in self.userStatus:
 			now = time.time()
 			self.userStatus[username] = [target, now, 0]
