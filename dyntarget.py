@@ -57,44 +57,58 @@ class DyntargetManager:
 			return None
 		return target
 	
-	def getTarget(self, username, now, DTMode = None, RequestedTarget = None):
+	def resetShareCounter(self, username, now):
+		self.userStatus[username][1] = now
+		self.userStatus[username][2] = 0
+	
+	def getTargetLimits(self, username, now):
 		userStatus = self.userStatus
 		
-		if DTMode is None:
-			DTMode = self.DynamicTargetting
-		if not DTMode:
-			return None
-		if username in userStatus:
-			status = userStatus[username]
-		else:
-			# No record, use default target
-			RequestedTarget = self.clampTarget(RequestedTarget, DTMode)
-			userStatus[username] = [RequestedTarget, now, 0]
-			return RequestedTarget
+		status = userStatus[username]
 		(targetIn, lastUpdate, hashes) = status
 		target = targetIn or self.ShareTarget
 		work = hashes / target2avghashes(target)
 		if work <= self.DynamicTargetGoal:
 			if now < lastUpdate + self.DynamicTargetWindow and (targetIn is None or targetIn >= self.minTarget):
 				# No reason to change it just yet
-				return self.clampTarget(targetIn, DTMode)
+				return (targetIn, targetIn)
 			if not work:
 				# No shares received, reset to minimum
 				if targetIn:
 					self.logger.debug("No shares from %s, resetting to minimum target" % (repr(username),))
-					userStatus[username] = [None, now, 0]
-				return self.clampTarget(None, DTMode)
+					self.resetShareCounter(username, now)
+				return (None, None)
 		
 		deltaSec = now - lastUpdate
 		target = int(target * self.DynamicTargetGoal * deltaSec / self.DynamicTargetWindow / work)
+		self.resetShareCounter(username, now)
+		return (target, target)
+	
+	def getTarget(self, username, now, DTMode = None, RequestedTarget = None):
+		if DTMode is None:
+			DTMode = self.DynamicTargetting
+		if not DTMode:
+			return None
+		
+		if username not in self.userStatus:
+			self.userStatus[username] = [None, now, 0]
+		targetIn = self.userStatus[username][0]
+		
+		(maxtarget, deftarget) = self.getTargetLimits(username, now)
+		if RequestedTarget:
+			target = min(maxtarget, RequestedTarget)
+		else:
+			target = deftarget
 		target = self.clampTarget(target, DTMode)
+		
 		if target != targetIn:
+			self.userStatus[username][0] = target
 			pfx = 'Retargetting %s' % (repr(username),)
 			tin = targetIn or self.ShareTarget
 			self.logger.debug("%s from: %064x (pdiff %s)" % (pfx, tin, target2pdiff(tin)))
 			tgt = target or self.ShareTarget
 			self.logger.debug("%s   to: %064x (pdiff %s)" % (pfx, tgt, target2pdiff(tgt)))
-		userStatus[username] = [target, now, 0]
+		
 		return target
 	
 	def TopTargets(self, n = 0x10):
@@ -196,7 +210,7 @@ class DyntargetManagerRemote(DyntargetManager):
 		sock.connect(dest)
 		self.client = DyntargetClient(self._main, sock, dest, UpstreamManager=self)
 	
-	def _getTarget_I(self, username, now, DTMode = None, RequestedTarget = None):
+	def _getTargetLimits_I(self, username, now):
 		self._maybe_reconnect()
 		hashes = self.userStatus.get(username, (None, None, 0))[2]
 		busername = username.encode('utf8')
@@ -206,26 +220,19 @@ class DyntargetManagerRemote(DyntargetManager):
 		print("Waiting... %s" % (username,))
 		self.client.push(pkt)
 		
-		(maxtarget, deftarget) = rq.get(timeout=1)
-		target = self.clampTarget(maxtarget, self.DynamicTargetting)
-		self.userStatus[username] = [target, now, 0]
-		
-		return target
+		rv = rq.get(timeout=1)
+		self.resetShareCounter(username, now)
+		return rv
 	
-	def getTarget(self, username, *a, **ka):
+	def getTargetLimits(self, username, *a, **ka):
 		try:
-			return self._getTarget_I(username, *a, **ka)
+			return self._getTargetLimits_I(username, *a, **ka)
 		except:
 			self.logger.warn(traceback.format_exc())
 			pass
 		
 		target = self.userStatus.get(username, (None,))[0]
-		return self.clampTarget(target, self.DynamicTargetting)
+		return (target, target)
 	
 	def setTargetLimits(self, username, maxtarget, deftarget):
-		target = self.clampTarget(maxtarget, self.DynamicTargetting)
-		if username not in self.userStatus:
-			now = time.time()
-			self.userStatus[username] = [target, now, 0]
-		else:
-			self.userStatus[username][0] = target
+		pass
