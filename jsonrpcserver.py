@@ -495,7 +495,8 @@ class JSONRPCServer:
 			except select.error:
 				continue
 			for (fd, e) in events:
-				o = self._fd[fd]
+				o = self._fd.get(fd)
+				if o is None: continue
 				if e & EPOLL_READ:
 					tryErr(self.logger, o.handle_read)
 				if e & EPOLL_WRITE:
