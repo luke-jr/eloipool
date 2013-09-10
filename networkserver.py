@@ -65,6 +65,11 @@ class SocketHandler:
 	get_terminator = asynchat.async_chat.get_terminator
 	set_terminator = asynchat.async_chat.set_terminator
 	
+	def found_terminator(self):
+		inbuf = b''.join(self.incoming)
+		self.incoming = []
+		return self.process_data(inbuf)
+	
 	def handle_readbuf(self):
 		while self.ac_in_buffer:
 			lb = len(self.ac_in_buffer)
