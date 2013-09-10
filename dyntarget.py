@@ -37,7 +37,7 @@ class DyntargetManager:
 		if target is None or target > self.ShareTarget:
 			target = self.ShareTarget
 		
-		# Never target above the network, as we'd lose blocks
+		# Never target above upstream(s), as we'd lose blocks
 		if target < self.minTarget:
 			target = self.minTarget
 		

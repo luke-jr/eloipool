@@ -154,7 +154,7 @@ def blockChanged():
 		networkTarget = None
 	else:
 		networkTarget = Bits2Target(bits)
-		Dyntarget.minTarget = networkTarget
+		Dyntarget.minTarget = max(networkTarget, config.GotWorkTarget)
 	if MM.lastBlock != (None, None, None):
 		global DupeShareHACK
 		DupeShareHACK = {}
