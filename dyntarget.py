@@ -96,7 +96,7 @@ class DyntargetManager:
 		
 		(maxtarget, deftarget) = self.getTargetLimits(username, now)
 		if RequestedTarget:
-			target = min(maxtarget, RequestedTarget)
+			target = min(maxtarget or self.ShareTarget, RequestedTarget)
 		else:
 			target = deftarget
 		target = self.clampTarget(target, DTMode)
