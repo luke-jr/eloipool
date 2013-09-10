@@ -78,6 +78,9 @@ class StratumHandler(networkserver.SocketHandler):
 			})
 			return
 		
+		if rpc['id'] is None:
+			return
+		
 		self.sendReply({
 			'error': None,
 			'id': rpc['id'],
