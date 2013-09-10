@@ -133,7 +133,10 @@ import jsonrpc_getwork
 from util import Bits2Target
 
 workLog = {}
-Dyntarget = dyntarget.DyntargetManager()
+if hasattr(config, 'DynamicTargetServer'):
+	Dyntarget = dyntarget.DyntargetManagerRemote()
+else:
+	Dyntarget = dyntarget.DyntargetManager()
 Dyntarget.__dict__.update(config.__dict__)
 networkTarget = None
 DupeShareHACK = {}

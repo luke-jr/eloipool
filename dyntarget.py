@@ -15,8 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import queue
 import logging
 from math import ceil, log
+import networkserver
+import socket
+import struct
+import threading
+import time
+import traceback
 from util import target2avghashes, target2bdiff, target2pdiff
 
 class DyntargetManager:
@@ -108,3 +115,117 @@ class DyntargetManager:
 		if self.DynamicTargetting and username in self.userStatus:
 			# NOTE: userStatus[username] only doesn't exist across restarts
 			self.userStatus[username][2] += hashes
+
+class DyntargetClient(networkserver.SocketHandler):
+	logger = logging.getLogger('DyntargetClient')
+	
+	def __init__(self, *a, UpstreamManager=None, **ka):
+		super().__init__(*a, **ka)
+		self.UsMgr = UpstreamManager
+		self.push(b'Dyntarget Client 0\0')
+		self.set_terminator(b'\0')
+		self.waitingfor = {}
+	
+	def process_data(self, inbuf):
+		# NOTE: Replaced after version negotiation
+		assert inbuf[:17] == b'Dyntarget Server '
+		self.changeTask(None)
+		self.reset_process()
+	
+	def close(self):
+		try:
+			raise None
+		except:
+			print(traceback.format_exc())
+	
+	def reset_process(self):
+		self.process_data = self.process_targets
+		self.set_terminator(65)
+		print("RESET")
+	
+	def process_targets(self, inbuf):
+		assert inbuf[0:1] == b'\1'
+		nl = struct.unpack('!8Q', inbuf[1:])
+		self.mintarget = (nl[0] << 192) | (nl[1] << 128) | (nl[2] << 64) | nl[3]
+		self.deftarget = (nl[4] << 192) | (nl[5] << 128) | (nl[6] << 64) | nl[7]
+		print("Got targets")
+		
+		self.process_data = self.process_username
+		self.set_terminator(b'\0')
+	
+	def process_username(self, inbuf):
+		busername = inbuf
+		username = busername.decode('utf8')
+		print("Got username %s"% (username,))
+		rv = (self.mintarget, self.deftarget)
+		self.UsMgr.setTargetLimits(username, *rv)
+		wf = self.waitingfor.get(username)
+		if wf:
+			del self.waitingfor[username]
+			for rq in wf:
+				rq.put(rv)
+		
+		self.reset_process()
+	
+	def close(self):
+		super().close()
+		self.client._reconnect()
+
+class DyntargetClientMain(networkserver.AsyncSocketServer):
+	logger = logging.getLogger('DyntargetClientMain')
+
+class DyntargetManagerRemote(DyntargetManager):
+	def __init__(self, *a, **ka):
+		super().__init__(*a, **ka)
+		self._main = DyntargetClientMain(DyntargetClient)
+		thr = threading.Thread(target=self._main.serve_forever)
+		thr.daemon = True
+		thr.start()
+		self._thr = thr
+		self.client = lambda: None
+		self.client.fd = -1
+	
+	def _maybe_reconnect(self):
+		if self.client.fd != -1:
+			return
+		self._reconnect()
+	
+	def _reconnect(self):
+		dest = self.DynamicTargetServer
+		sock = socket.socket(socket.AF_INET6)
+		sock.connect(dest)
+		self.client = DyntargetClient(self._main, sock, dest, UpstreamManager=self)
+	
+	def _getTarget_I(self, username, now, DTMode = None, RequestedTarget = None):
+		self._maybe_reconnect()
+		hashes = self.userStatus.get(username, (None, None, 0))[2]
+		busername = username.encode('utf8')
+		pkt = b'\0' + struct.pack('!Q', int(hashes)) + busername + b'\0'
+		rq = queue.Queue(1)
+		self.client.waitingfor.setdefault(username, []).append(rq)
+		print("Waiting... %s" % (username,))
+		self.client.push(pkt)
+		
+		(mintarget, deftarget) = rq.get(timeout=1)
+		target = self.clampTarget(mintarget, self.DynamicTargetting)
+		self.userStatus[username] = [target, now, 0]
+		
+		return target
+	
+	def getTarget(self, username, *a, **ka):
+		try:
+			return self._getTarget_I(username, *a, **ka)
+		except:
+			self.logger.warn(traceback.format_exc())
+			pass
+		
+		target = self.userStatus.get(username, (None,))[0]
+		return self.clampTarget(target, self.DynamicTargetting)
+	
+	def setTargetLimits(self, username, mintarget, deftarget):
+		target = self.clampTarget(mintarget, self.DynamicTargetting)
+		if username not in self.userStatus:
+			now = time.time()
+			self.userStatus[username] = [target, now, 0]
+		else:
+			self.userStatus[username][0] = target
