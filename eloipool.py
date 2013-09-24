@@ -221,6 +221,9 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
+if not hasattr(config, 'GotWorkTarget'):
+	config.GotWorkTarget = 0
+
 def clampTarget(target, DTMode):
 	# ShareTarget is the minimum
 	if target is None or target > config.ShareTarget:
