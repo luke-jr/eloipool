@@ -367,13 +367,6 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	status = userStatus[username]
-	target = status[0] or config.ShareTarget
-	if target == workTarget:
-		userStatus[username][2] += 1
-	else:
-		userStatus[username][2] += float(target) / workTarget
-	
 	if moden:
 		cbpre = cbtxn.getCoinbase()
 		cbpreLen = len(cbpre)
@@ -396,6 +389,13 @@ def checkShare(share):
 		allowed = assembleBlock(data, txlist)
 		if allowed != share['data'] + share['blkdata']:
 			raise RejectedShare('bad-txns')
+	
+	status = userStatus[username]
+	target = status[0] or config.ShareTarget
+	if target == workTarget:
+		userStatus[username][2] += 1
+	else:
+		userStatus[username][2] += float(target) / workTarget
 checkShare.logger = logging.getLogger('checkShare')
 
 def receiveShare(share):
