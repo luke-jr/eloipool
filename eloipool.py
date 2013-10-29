@@ -612,15 +612,6 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	if config.DynamicTargetting and username in userStatus:
-		# NOTE: userStatus[username] only doesn't exist across restarts
-		status = userStatus[username]
-		target = status[0] or config.ShareTarget
-		if target == workTarget:
-			userStatus[username][2] += 1
-		else:
-			userStatus[username][2] += float(target) / workTarget
-	
 	if moden:
 		cbpre = workCoinbase
 		cbpreLen = len(cbpre)
@@ -642,6 +633,15 @@ def checkShare(share):
 			allowed = assembleBlock(data, txlist)[80:]
 			if allowed != share['blkdata']:
 				raise RejectedShare('bad-txns')
+	
+	if config.DynamicTargetting and username in userStatus:
+		# NOTE: userStatus[username] only doesn't exist across restarts
+		status = userStatus[username]
+		target = status[0] or config.ShareTarget
+		if target == workTarget:
+			userStatus[username][2] += 1
+		else:
+			userStatus[username][2] += float(target) / workTarget
 checkShare.logger = logging.getLogger('checkShare')
 
 def logShare(share):
