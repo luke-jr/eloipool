@@ -174,7 +174,7 @@ class DyntargetClient(networkserver.SocketHandler):
 	
 	def close(self):
 		super().close()
-		self.client._reconnect()
+		self.UsMgr._reconnect()
 
 class DyntargetClientMain(networkserver.AsyncSocketServer):
 	logger = logging.getLogger('DyntargetClientMain')
