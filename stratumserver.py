@@ -117,6 +117,8 @@ class StratumHandler(networkserver.SocketHandler):
 		})
 	
 	def sendJob(self):
+		if len(self.Usernames) == 0:
+			return
 		target = self.server.defaultTarget
 		if len(self.Usernames) == 1:
 			dtarget = self.server.getTarget(next(iter(self.Usernames)), time())
@@ -143,6 +145,7 @@ class StratumHandler(networkserver.SocketHandler):
 			'method': 'client.get_version',
 			'params': (),
 		})
+		self.changeTask(self.sendJob, 0)
 	
 	def _stratumreply_7(self, rpc):
 		self.UA = rpc.get('result') or rpc
