@@ -70,7 +70,7 @@ class DyntargetServer(networkserver.AsyncSocketServer):
 		for i in range(4):
 			pkt = struct.pack('!Q', tgt & 0xffffffffffffffff) + pkt
 			tgt >>= 64
-		pkt = b'\1' + (pkt * 2) + username + b'\0'
+		pkt = b'\1' + (pkt * 2) + (b'\0' * 0x20) + username + b'\0'
 		for c in self.connections.values():
 			c.push(pkt)
 

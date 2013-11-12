@@ -71,18 +71,18 @@ class DyntargetManager:
 		if work <= self.DynamicTargetGoal:
 			if now < lastUpdate + self.DynamicTargetWindow and (targetIn is None or targetIn >= self.minTarget):
 				# No reason to change it just yet
-				return (targetIn, targetIn)
+				return (targetIn, targetIn, 0)
 			if not work:
 				# No shares received, reset to minimum
 				if targetIn:
 					self.logger.debug("No shares from %s, resetting to minimum target" % (repr(username),))
 					self.resetShareCounter(username, now)
-				return (None, None)
+				return (None, None, 0)
 		
 		deltaSec = now - lastUpdate
 		target = int(target * self.DynamicTargetGoal * deltaSec / self.DynamicTargetWindow / work)
 		self.resetShareCounter(username, now)
-		return (target, target)
+		return (target, target, 0)
 	
 	def getTarget(self, username, now, DTMode = None, RequestedTarget = None):
 		if DTMode is None:
@@ -94,9 +94,9 @@ class DyntargetManager:
 			self.userStatus[username] = [None, now, 0]
 		targetIn = self.userStatus[username][0]
 		
-		(maxtarget, deftarget) = self.getTargetLimits(username, now)
+		(maxtarget, deftarget, mintarget) = self.getTargetLimits(username, now)
 		if RequestedTarget:
-			target = min(maxtarget or self.ShareTarget, RequestedTarget)
+			target = max(mintarget, min(maxtarget or self.ShareTarget, RequestedTarget))
 		else:
 			target = deftarget
 		target = self.clampTarget(target, DTMode)
@@ -148,13 +148,14 @@ class DyntargetClient(networkserver.SocketHandler):
 	
 	def reset_process(self):
 		self.process_data = self.process_targets
-		self.set_terminator(65)
+		self.set_terminator(0x61)
 	
 	def process_targets(self, inbuf):
 		assert inbuf[0:1] == b'\1'
-		nl = struct.unpack('!8Q', inbuf[1:])
+		nl = struct.unpack('!12Q', inbuf[1:])
 		self.maxtarget = (nl[0] << 192) | (nl[1] << 128) | (nl[2] << 64) | nl[3]
 		self.deftarget = (nl[4] << 192) | (nl[5] << 128) | (nl[6] << 64) | nl[7]
+		self.mintarget = (nl[8] << 192) | (nl[9] << 128) | (nl[0xa] << 64) | nl[0xb]
 		
 		self.process_data = self.process_username
 		self.set_terminator(b'\0')
@@ -162,7 +163,7 @@ class DyntargetClient(networkserver.SocketHandler):
 	def process_username(self, inbuf):
 		busername = inbuf
 		username = busername.decode('utf8')
-		rv = (self.maxtarget, self.deftarget)
+		rv = (self.maxtarget, self.deftarget, self.mintarget)
 		self.UsMgr.setTargetLimits(username, *rv)
 		wf = self.waitingfor.get(username)
 		if wf:
@@ -222,7 +223,7 @@ class DyntargetManagerRemote(DyntargetManager):
 			pass
 		
 		target = self.userStatus.get(username, (None,))[0]
-		return (target, target)
+		return (target, target, 0)
 	
-	def setTargetLimits(self, username, maxtarget, deftarget):
+	def setTargetLimits(self, username, maxtarget, deftarget, mintarget):
 		pass
