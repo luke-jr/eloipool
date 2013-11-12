@@ -227,6 +227,9 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
+if not hasattr(config, 'GotWorkTarget'):
+	config.GotWorkTarget = 0
+
 TopTargets = Dyntarget.TopTargets
 
 def RegisterWork(username, wli, wld, RequestedTarget = None):
@@ -544,8 +547,6 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	Dyntarget.workCompleted(username, target2avghashes(workTarget))
-	
 	if moden:
 		cbpre = workCoinbase
 		cbpreLen = len(cbpre)
@@ -567,6 +568,8 @@ def checkShare(share):
 			allowed = assembleBlock(data, txlist)[80:]
 			if allowed != share['blkdata']:
 				raise RejectedShare('bad-txns')
+	
+	Dyntarget.workCompleted(username, target2avghashes(workTarget))
 checkShare.logger = logging.getLogger('checkShare')
 
 def logShare(share):
