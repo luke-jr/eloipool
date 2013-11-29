@@ -439,7 +439,8 @@ class AsyncSocketServer:
 			if not events:
 				self.lastidle = time()
 			for (fd, e) in events:
-				o = self._fd[fd]
+				o = self._fd.get(fd)
+				if o is None: continue
 				self.lastHandler = o
 				try:
 					if e & EPOLL_READ:

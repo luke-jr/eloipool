@@ -221,14 +221,16 @@ def submitGotwork(info):
 	except:
 		checkShare.logger.warning('Failed to submit gotwork\n' + traceback.format_exc())
 
+if not hasattr(config, 'GotWorkTarget'):
+	config.GotWorkTarget = 0
+
 def clampTarget(target, DTMode):
 	# ShareTarget is the minimum
 	if target is None or target > config.ShareTarget:
 		target = config.ShareTarget
 	
-	# Never target above the network, as we'd lose blocks
-	if target < networkTarget:
-		target = networkTarget
+	# Never target above upstream(s), as we'd lose blocks
+	target = max(target, networkTarget, config.GotWorkTarget)
 	
 	if DTMode == 2:
 		# Ceil target to a power of two :)
@@ -610,15 +612,6 @@ def checkShare(share):
 	if shareTimestamp > shareTime + 7200:
 		raise RejectedShare('time-too-new')
 	
-	if config.DynamicTargetting and username in userStatus:
-		# NOTE: userStatus[username] only doesn't exist across restarts
-		status = userStatus[username]
-		target = status[0] or config.ShareTarget
-		if target == workTarget:
-			userStatus[username][2] += 1
-		else:
-			userStatus[username][2] += float(target) / workTarget
-	
 	if moden:
 		cbpre = workCoinbase
 		cbpreLen = len(cbpre)
@@ -640,6 +633,15 @@ def checkShare(share):
 			allowed = assembleBlock(data, txlist)[80:]
 			if allowed != share['blkdata']:
 				raise RejectedShare('bad-txns')
+	
+	if config.DynamicTargetting and username in userStatus:
+		# NOTE: userStatus[username] only doesn't exist across restarts
+		status = userStatus[username]
+		target = status[0] or config.ShareTarget
+		if target == workTarget:
+			userStatus[username][2] += 1
+		else:
+			userStatus[username][2] += float(target) / workTarget
 checkShare.logger = logging.getLogger('checkShare')
 
 def logShare(share):
