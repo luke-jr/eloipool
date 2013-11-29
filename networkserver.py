@@ -65,6 +65,11 @@ class SocketHandler:
 	get_terminator = asynchat.async_chat.get_terminator
 	set_terminator = asynchat.async_chat.set_terminator
 	
+	def found_terminator(self):
+		inbuf = b''.join(self.incoming)
+		self.incoming = []
+		return self.process_data(inbuf)
+	
 	def handle_readbuf(self):
 		while self.ac_in_buffer:
 			lb = len(self.ac_in_buffer)
@@ -417,7 +422,9 @@ class AsyncSocketServer:
 						f()
 					except socket.error:
 						if EH: tryErr(EH.handle_error)
-					except:
+					except BaseException as e:
+						if isinstance(e, KeyboardInterrupt) and getattr(self, 'allowint', False):
+							self.keepgoing = False
 						self.logger.error(traceback.format_exc())
 						if EH: tryErr(EH.handle_close)
 			else:
@@ -432,7 +439,9 @@ class AsyncSocketServer:
 				events = self._epoll.poll(timeout=timeout)
 			except (IOError, select.error):
 				continue
-			except:
+			except BaseException as e:
+				if isinstance(e, KeyboardInterrupt) and getattr(self, 'allowint', False):
+					self.keepgoing = False
 				self.logger.error(traceback.format_exc())
 				continue
 			self.doing = 'events'
@@ -449,7 +458,9 @@ class AsyncSocketServer:
 						o.handle_write()
 				except socket.error:
 					tryErr(o.handle_error)
-				except:
+				except BaseException as e:
+					if isinstance(e, KeyboardInterrupt) and getattr(self, 'allowint', False):
+						self.keepgoing = False
 					self.logger.error(traceback.format_exc())
 					tryErr(o.handle_error)
 		self.doing = None
