@@ -67,6 +67,8 @@ class MerkleTree:
 
 # MerkleTree tests
 def _test():
+	if not hasattr(bytes, 'fromhex'):
+		return
 	from binascii import b2a_hex
 	mt = MerkleTree([None] + [bytes.fromhex(a) for a in [
 		'999d2c8bb6bda0bf784d9ebeb631d711dbbbfe1bc006ea13d6ad0d6a2649a971',
