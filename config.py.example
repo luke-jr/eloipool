@@ -267,11 +267,10 @@ LogFile = {
 # For details, see:
 # http://docs.python.org/3/library/logging.handlers.html#logging.handlers.TimedRotatingFileHandler
 
+### Settings related to blockchain parameters
 
-# The subsidy algorithm provided below is specifically for Bitcoin, where
-# 5000000000 is the size of the block reward
-# 210000 is how many blocks until the next halving
-# This algorithm can be modified slightly for altcoins which share a block reward algorithm like Bitcoins
-# e.g. change 5000000000 to 51200000000 and 210000 to 262141 for the "ATC" altcoin 
-# or alternatively replaced with an entirely new algorithm for altcoins which have different block reward mechanisms
+# The subsidy algorithm provided below is specifically for Bitcoin, where:
+# - 5000000000 is the amount of the block reward
+# - 210000 is how many blocks until the next halving
+# This algorithm can be modified slightly for altcoins which calculate a block reward from only the height.
 SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
