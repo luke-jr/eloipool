@@ -81,6 +81,7 @@ class merkleMaker(threading.Thread):
 		self.MinimumTemplateScore = 1
 		self.currentBlock = (None, None, None)
 		self.lastBlock = (None, None, None)
+		self.SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
 	
 	def _prepare(self):
 		self.TemplateSources = list(getattr(self, 'TemplateSources', ()))
@@ -157,7 +158,7 @@ class merkleMaker(threading.Thread):
 		self.nextMerkleUpdate = 0
 	
 	def createClearMerkleTree(self, height):
-		subsidy = SubsidyAlgo(height)
+		subsidy = self.SubsidyAlgo(height)
 		cbtxn = self.makeCoinbaseTxn(subsidy, False)
 		cbtxn.assemble()
 		return MerkleTree([cbtxn])
