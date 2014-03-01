@@ -503,12 +503,15 @@ def checkShare(share):
 			coinbase = None
 	else:
 		# Stratum
-		MWL = workLog[None]
 		wli = share['jobid']
 		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
 		moden = 1
 		othertxndata = b''
+		if None not in workLog:
+			# We haven't yet sent any stratum work for this block
+			raise RejectedShare('unknown-work')
+		MWL = workLog[None]
 	
 	if wli not in MWL:
 		raise RejectedShare('unknown-work')
