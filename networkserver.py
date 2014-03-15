@@ -23,9 +23,12 @@ import threading
 from time import time
 import traceback
 from util import ScheduleDict, WithNoop, tryErr
+from errno import EHOSTUNREACH, ETIMEDOUT
 
 EPOLL_READ = select.EPOLLIN | select.EPOLLPRI | select.EPOLLERR | select.EPOLLHUP
 EPOLL_WRITE = select.EPOLLOUT
+
+_DISCONNECTED = frozenset((EHOSTUNREACH,ETIMEDOUT))
 
 class SocketHandler:
 	ac_in_buffer_size = 4096
@@ -46,7 +49,12 @@ class SocketHandler:
 		try:
 			data = self.recv (self.ac_in_buffer_size)
 		except socket.error as why:
-			self.handle_error()
+			# This silences some additional expected socket errors
+			# not automatically dealt with by asyncore.
+			if why.args[0] not in _DISCONNECTED:
+				self.handle_error()
+			else:
+				self.handle_close()
 			return
 		
 		if self.closeme:
