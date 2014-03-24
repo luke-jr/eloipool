@@ -239,17 +239,12 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self.JobId = '%d' % (time(),)
 		self.WakeRequest = None
 		self.UpdateTask = None
+		self._PendingQuickUpdates = set()
 	
 	def checkAuthentication(self, username, password):
 		return True
 	
-	def updateJob(self, wantClear = False):
-		if self.UpdateTask:
-			try:
-				self.rmSchedule(self.UpdateTask)
-			except:
-				pass
-		
+	def updateJobOnly(self, wantClear = False, forceClean = False):
 		self._JobId += 1
 		JobId = '%d %d' % (time(), self._JobId)
 		(MC, wld) = self.getStratumJob(JobId, wantClear=wantClear)
@@ -286,15 +281,47 @@ class StratumServer(networkserver.AsyncSocketServer):
 				'00000002',
 				b2a_hex(bits[::-1]).decode('ascii'),
 				b2a_hex(struct.pack('>L', int(time()))).decode('ascii'),
-				not self.IsJobValid(self.JobId)
+				forceClean or not self.IsJobValid(self.JobId)
 			],
 		}).encode('ascii') + b"\n"
 		self.JobId = JobId
+		
+	def updateJob(self, wantClear = False):
+		if self.UpdateTask:
+			try:
+				self.rmSchedule(self.UpdateTask)
+			except:
+				pass
+		
+		self.updateJobOnly(wantClear=wantClear)
 		
 		self.WakeRequest = 1
 		self.wakeup()
 		
 		self.UpdateTask = self.schedule(self.updateJob, time() + 55)
+	
+	def doQuickUpdate(self):
+		PQU = self._PendingQuickUpdates
+		self._PendingQuickUpdates = set()
+		QUC = 0
+		for ic in list(self._Clients.values()):
+			if PQU.intersection(ic.Usernames):
+				if self.JobId in ic.JobTargets:
+					self.updateJobOnly(wantClear=True, forceClean=True)
+				try:
+					ic.sendJob()
+					QUC += 1
+				except socket.error:
+					# Ignore socket errors; let the main event loop take care of them later
+					pass
+				except:
+					self.logger.debug('Error sending quickupdate job:\n' + traceback.format_exc())
+		if QUC:
+			self.logger.debug("Quickupdated %d clients" % (QUC,))
+	
+	def quickDifficultyUpdate(self, username):
+		self._PendingQuickUpdates.add(username)
+		self.schedule(self.doQuickUpdate, time())
 	
 	def pre_schedule(self):
 		if self.WakeRequest:

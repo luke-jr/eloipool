@@ -475,6 +475,7 @@ def checkShare(share):
 	shareTime = share['time'] = time()
 	
 	username = share['username']
+	isstratum = False
 	if 'data' in share:
 		# getwork/GBT
 		checkData(share)
@@ -503,6 +504,7 @@ def checkShare(share):
 			coinbase = None
 	else:
 		# Stratum
+		isstratum = True
 		wli = share['jobid']
 		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
@@ -645,6 +647,8 @@ def checkShare(share):
 			userStatus[username][2] += 1
 		else:
 			userStatus[username][2] += float(target) / workTarget
+		if isstratum and userStatus[username][2] > config.DynamicTargetGoal * 2:
+			stratumsrv.quickDifficultyUpdate(username)
 checkShare.logger = logging.getLogger('checkShare')
 
 def logShare(share):
