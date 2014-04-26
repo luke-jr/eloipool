@@ -19,6 +19,7 @@ import logging
 import os
 import select
 import socket
+import ssl
 import threading
 from time import time
 import traceback
@@ -42,12 +43,21 @@ class SocketHandler:
 		self.logger.debug(traceback.format_exc())
 		self.handle_close()
 	
-	# NOTE: This function checks for socket-closed condition and calls handle_close
-	recv = asynchat.async_chat.recv
-	
-	def handle_read(self):
+	def recv(self, sz, flags = 0):
 		try:
-			data = self.recv (self.ac_in_buffer_size)
+			data = self.socket.recv(sz, flags)
+			if not data:
+				self.handle_close()
+				return None
+			return data
+		except ssl.SSLError as why:
+			if why.args[0] == ssl.SSL_ERROR_WANT_READ:
+				pass
+			elif why.args[0] == ssl.SSL_ERROR_ZERO_RETURN:
+				self.handle_close()
+			else:
+				self.handle_error()
+			return None
 		except socket.error as why:
 			# This silences some additional expected socket errors
 			# not automatically dealt with by asyncore.
@@ -55,7 +65,43 @@ class SocketHandler:
 				self.handle_error()
 			else:
 				self.handle_close()
-			return
+			return None
+	
+	def _tls_handshake(self):
+		try:
+			self.socket.do_handshake()
+		except ssl.SSLError as err:
+			if err.args[0] == ssl.SSL_ERROR_WANT_READ:
+				self.server.register_socket_m(self.fd, EPOLL_READ)
+			elif err.args[0] == ssl.SSL_ERROR_WANT_WRITE:
+				self.server.register_socket_m(self.fd, EPOLL_WRITE)
+			else:
+				self.handle_error()
+			return False
+		self.encrypted = 2
+		if len(self.wbuf):
+			self.server.register_socket_m(self.fd, EPOLL_READ | EPOLL_WRITE)
+		else:
+			self.server.register_socket_m(self.fd, EPOLL_READ)
+		return True
+		
+	
+	def handle_read(self):
+		if getattr(self, 'encrypted', 0) == 1:
+			self._tls_handshake()
+			if self.encrypted < 2:
+				return
+		elif hasattr(self.server, 'TLSConfig') and not hasattr(self, 'encrypted'):
+			data = self.recv(1, socket.MSG_PEEK)
+			if data is None or not len(data): return
+			if data[0] == 0x16:
+				# TLS
+				self.socket = ssl.wrap_socket(self.socket, server_side=True, do_handshake_on_connect=False, **self.server.TLSConfig)
+				self.encrypted = 1
+				self._tls_handshake()
+		
+		data = self.recv(self.ac_in_buffer_size)
+		if data is None: return
 		
 		if self.closeme:
 			# All input is ignored from sockets we have "closed"
@@ -153,6 +199,10 @@ class SocketHandler:
 		self.close()
 	
 	def handle_write(self):
+		if getattr(self, 'encrypted', 0) == 1:
+			self._tls_handshake()
+			if self.encrypted < 2:
+				return
 		if self.wbuf is None:
 			# Socket was just closed by remote peer
 			return

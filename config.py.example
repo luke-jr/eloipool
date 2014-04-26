@@ -15,6 +15,12 @@
 # Name of the server
 ServerName = 'Private Eloipool'
 
+# TLS encryption support
+#TLSConfig = {
+#	'certfile': 'server.crt',
+#	'keyfile': 'server.key',
+#}
+
 ### Settings relating to server scaling/load
 
 # Share hashes must be below this to be valid shares

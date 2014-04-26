@@ -954,6 +954,10 @@ if __name__ == "__main__":
 	for a in config.StratumAddresses:
 		NetworkListener(stratumsrv, a)
 	
+	if hasattr(config, 'TLSConfig'):
+		server.TLSConfig = config.TLSConfig
+		stratumsrv.TLSConfig = config.TLSConfig
+	
 	MM.start()
 	
 	restoreState(config.SaveStateFilename)
