@@ -20,10 +20,23 @@ def exit():
 
 def _RunCLI():
 	import code, sys, threading
+	namespace = {}
 	try:
 		raise None
 	except:
-		namespace = sys.exc_info()[2].tb_frame.f_back.f_back.f_globals
+		# The goal here is to find the context that imported us
+		try:
+			frame = sys.exc_info()[2].tb_frame
+			while frame.f_code.co_filename[0] != '<':
+				frame = frame.f_back
+			while frame.f_code.co_filename[0] == '<':
+				frame = frame.f_back
+			namespace.update(frame.f_globals)
+			namespace.update(frame.f_locals)
+		except:
+			print("InteractiveMode: Error setting up initial namespace")
+		finally:
+			frame = None
 	
 	namespace.setdefault('exit', exit)
 	
