@@ -27,6 +27,8 @@ from time import time
 import traceback
 from util import RejectedShare, swap32, target2bdiff, UniqueSessionIdManager
 
+extranonce2sz = 4
+
 class StratumError(BaseException):
 	def __init__(self, errno, msg, tb = True):
 		self.StratumErrNo = errno
@@ -180,7 +182,7 @@ class StratumHandler(networkserver.SocketHandler):
 				['mining.set_difficulty', '%s2' % (xid,)],
 			],
 			xid,
-			4,
+			extranonce2sz,
 		]
 	
 	def close(self):
@@ -201,7 +203,7 @@ class StratumHandler(networkserver.SocketHandler):
 			'remoteHost': self.remoteHost,
 			'jobid': jobid,
 			'extranonce1': self.extranonce1,
-			'extranonce2': bytes.fromhex(extranonce2),
+			'extranonce2': bytes.fromhex(extranonce2)[:extranonce2sz],
 			'ntime': bytes.fromhex(ntime),
 			'nonce': bytes.fromhex(nonce),
 			'userAgent': self.UA,
