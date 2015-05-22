@@ -18,6 +18,7 @@
 
 import argparse
 import importlib
+import struct
 argparser = argparse.ArgumentParser()
 argparser.add_argument('-c', '--config', help='Config name to load from config_<ARG>.py')
 args = argparser.parse_args()
@@ -26,6 +27,10 @@ if not args.config is None:
 	configmod = 'config_%s' % (args.config,)
 __import__(configmod)
 config = importlib.import_module(configmod)
+
+if not hasattr(config, 'BlockVersion'):
+	config.BlockVersion = 3
+config.BlockVersionBytes = struct.pack('<L', config.BlockVersion)
 
 if not hasattr(config, 'ServerName'):
 	config.ServerName = 'Unnamed Eloipool'
@@ -308,7 +313,7 @@ def RegisterWork(username, wli, wld, RequestedTarget = None):
 def getBlockHeader(username):
 	MRD = MM.getMRD()
 	merkleRoot = MRD[0]
-	hdr = MakeBlockHeader(MRD)
+	hdr = MakeBlockHeader(MRD, config.BlockVersionBytes)
 	workLog.setdefault(username, {})[merkleRoot] = (MRD, time())
 	target = RegisterWork(username, merkleRoot, MRD)
 	return (hdr, workLog[username][merkleRoot], target)
@@ -443,14 +448,13 @@ def checkData(share):
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
 	
-	# Block version is checked here
-	if data[1:4] != b'\0\0\0' or data[0] != 3:
+	if data[0] != config.BlockVersionBytes:
 		raise RejectedShare('bad-version')
 
 def buildStratumData(share, merkleroot):
 	(prevBlock, height, bits) = MM.currentBlock
 	
-	data = b'\x03\0\0\0'
+	data = config.BlockVersionBytes
 	data += prevBlock
 	data += merkleroot
 	data += share['ntime'][::-1]
@@ -932,6 +936,7 @@ if __name__ == "__main__":
 	server.getBlockTemplate = getBlockTemplate
 	server.receiveShare = receiveShare
 	server.RaiseRedFlags = RaiseRedFlags
+	server.BlockVersion = config.BlockVersion
 	server.ShareTarget = config.ShareTarget
 	server.checkAuthentication = checkAuthentication
 	
@@ -945,6 +950,7 @@ if __name__ == "__main__":
 	stratumsrv.receiveShare = receiveShare
 	stratumsrv.RaiseRedFlags = RaiseRedFlags
 	stratumsrv.getTarget = getTarget
+	stratumsrv.BlockVersionHex = '%08x' % (config.BlockVersion,)
 	stratumsrv.defaultTarget = config.ShareTarget
 	stratumsrv.IsJobValid = IsJobValid
 	stratumsrv.checkAuthentication = checkAuthentication

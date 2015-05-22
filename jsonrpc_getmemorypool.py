@@ -33,6 +33,7 @@ class _getmemorypool:
 	def final_init(server):
 		ShareTargetHex = '%064x' % (server.ShareTarget,)
 		JSONRPCHandler.getmemorypool_rv_template['target'] = ShareTargetHex
+		JSONRPCHandler.getmemorypool_rv_template['version'] = server.BlockVersion
 	
 	getmemorypool_rv_template = {
 		'longpoll': '/LP',

@@ -26,6 +26,7 @@ class _getblocktemplate:
 	def final_init(server):
 		ShareTargetHex = '%064x' % (server.ShareTarget,)
 		JSONRPCHandler.getblocktemplate_rv_template['target'] = ShareTargetHex
+		JSONRPCHandler.getblocktemplate_rv_template['version'] = server.BlockVersion
 	
 	getblocktemplate_rv_template = {
 		'longpoll': '/LP',

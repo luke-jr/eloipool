@@ -35,10 +35,10 @@ import traceback
 _makeCoinbase = [0, 0]
 _filecounter = 0
 
-def MakeBlockHeader(MRD):
+def MakeBlockHeader(MRD, BlockVersionBytes):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
 	timestamp = pack('<L', int(time()))
-	hdr = b'\3\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	hdr = BlockVersionBytes + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
 def assembleBlock(blkhdr, txlist):
@@ -417,7 +417,7 @@ class merkleMaker(threading.Thread):
 		cbtxn.assemble()
 		merkleRoot = newMerkleTree.merkleRoot()
 		MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
-		blkhdr = MakeBlockHeader(MRD)
+		blkhdr = MakeBlockHeader(MRD, self.BlockVersionBytes)
 		data = assembleBlock(blkhdr, txnlist)
 		ProposeReq = {
 			"mode": "proposal",
