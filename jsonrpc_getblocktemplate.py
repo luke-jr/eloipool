@@ -36,7 +36,7 @@ class _getblocktemplate:
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 		'expires': 120,
-		'version': 2,
+		'version': 3,
 		'submitold': True,
 		
 		# Bitcoin-specific:

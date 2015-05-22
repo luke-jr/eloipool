@@ -38,7 +38,7 @@ _filecounter = 0
 def MakeBlockHeader(MRD):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
 	timestamp = pack('<L', int(time()))
-	hdr = b'\2\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
+	hdr = b'\3\0\0\0' + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
 def assembleBlock(blkhdr, txlist):

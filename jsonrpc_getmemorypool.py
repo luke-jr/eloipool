@@ -41,7 +41,7 @@ class _getmemorypool:
 		],
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-		'version': 2,
+		'version': 3,
 		'submitold': True,
 	}
 	def doJSON_getmemorypool(self, params = _NoParams, sp = _NoParams):

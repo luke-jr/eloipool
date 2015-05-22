@@ -443,15 +443,14 @@ def checkData(share):
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
 	
-	# Note that we should accept miners reducing version to 1 if they don't understand 2 yet
-	# FIXME: When the supermajority is upgraded to version 2, stop accepting 1!
-	if data[1:4] != b'\0\0\0' or data[0] > 2:
+	# Block version is checked here
+	if data[1:4] != b'\0\0\0' or data[0] != 3:
 		raise RejectedShare('bad-version')
 
 def buildStratumData(share, merkleroot):
 	(prevBlock, height, bits) = MM.currentBlock
 	
-	data = b'\x02\0\0\0'
+	data = b'\x03\0\0\0'
 	data += prevBlock
 	data += merkleroot
 	data += share['ntime'][::-1]
