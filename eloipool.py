@@ -210,10 +210,13 @@ if not hasattr(config, 'DelayLogForUpstream'):
 
 if not hasattr(config, 'DynamicTargetting'):
 	config.DynamicTargetting = 0
+	config.DynamicTargetQuick = False
 else:
 	if not hasattr(config, 'DynamicTargetWindow'):
 		config.DynamicTargetWindow = 120
 	config.DynamicTargetGoal *= config.DynamicTargetWindow / 60
+	if not hasattr(config, 'DynamicTargetQuick'):
+		config.DynamicTargetQuick = True
 
 def submitGotwork(info):
 	try:
@@ -475,7 +478,7 @@ def checkShare(share):
 	shareTime = share['time'] = time()
 	
 	username = share['username']
-	isstratum = False
+	checkQuickDiffAdjustment = False
 	if 'data' in share:
 		# getwork/GBT
 		checkData(share)
@@ -504,7 +507,7 @@ def checkShare(share):
 			coinbase = None
 	else:
 		# Stratum
-		isstratum = True
+		checkQuickDiffAdjustment = config.DynamicTargetQuick
 		wli = share['jobid']
 		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
@@ -647,7 +650,7 @@ def checkShare(share):
 			userStatus[username][2] += 1
 		else:
 			userStatus[username][2] += float(target) / workTarget
-		if isstratum and userStatus[username][2] > config.DynamicTargetGoal * 2:
+		if checkQuickDiffAdjustment and userStatus[username][2] > config.DynamicTargetGoal * 2:
 			stratumsrv.quickDifficultyUpdate(username)
 checkShare.logger = logging.getLogger('checkShare')
 
