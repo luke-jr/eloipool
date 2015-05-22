@@ -29,7 +29,7 @@ def varlenDecode(b, rc = _ignoredrc):
 		rc[0] += 3
 		return (unpack('<H', b[1:3])[0], b[3:])
 	rc[0] += 1
-	return (b[0], b[1:])
+	return (ord(b[:1]), b[1:])
 
 def varlenEncode(n):
 	if n < 0xfd:
