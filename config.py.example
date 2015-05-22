@@ -47,10 +47,10 @@ WorkQueueSizeClear = (0x1000, 0x2000)
 # (used for longpolls)
 WorkQueueSizeLongpoll = (0x1000, 0x2000)
 
-# How long to wait between getmemorypool updates normally
+# How long to wait between bitcoind GBT updates normally
 MinimumTxnUpdateWait = 5
 
-# How long to wait between retries if getmemorypool fails
+# How long to wait between retries if bitcoind request fails
 TxnUpdateRetryWait = 1
 
 # How long to sleep in idle loops (temporary!)
