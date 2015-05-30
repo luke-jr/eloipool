@@ -25,7 +25,7 @@ class BitcoinScript:
 		if ver == 0 or ver == 111:
 			return b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac'
 		elif ver == 5 or ver == 196:
-			return b'\xa9\x14' + pubkeyhash + '\x87'
+			return b'\xa9\x14' + pubkeyhash + b'\x87'
 		raise ValueError('invalid address version')
 
 def countSigOps(s):
