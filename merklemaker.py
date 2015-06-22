@@ -392,7 +392,7 @@ class merkleMaker(threading.Thread):
 	def _CheckTemplate(self, newMerkleTree, TS):
 		TCList = self.TemplateChecks
 		if not TCList:
-			if 'proposal' not in newMerkleTree.oMP.get('capabilities', ()):
+			if TCList is None or 'proposal' not in newMerkleTree.oMP.get('capabilities', ()):
 				return (None, None)
 			TCList = (
 				{
