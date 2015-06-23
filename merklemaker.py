@@ -84,6 +84,10 @@ class merkleMaker(threading.Thread):
 		self.SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
 	
 	def _prepare(self):
+		self.UseTemplateChecks = True
+		if getattr(self, 'TemplateChecks', True) is None:
+			self.TemplateChecks = ()
+			self.UseTemplateChecks = False
 		self.TemplateSources = list(getattr(self, 'TemplateSources', ()))
 		self.TemplateChecks = list(getattr(self, 'TemplateChecks', ()))
 		if getattr(self, 'BlockSubmissions', None) is None:
@@ -394,9 +398,11 @@ class merkleMaker(threading.Thread):
 		return newMerkleTree
 	
 	def _CheckTemplate(self, newMerkleTree, TS):
+		if not self.UseTemplateChecks:
+			return (None, None)
 		TCList = self.TemplateChecks
 		if not TCList:
-			if TCList is None or 'proposal' not in newMerkleTree.oMP.get('capabilities', ()):
+			if 'proposal' not in newMerkleTree.oMP.get('capabilities', ()):
 				return (None, None)
 			TCList = (
 				{
