@@ -27,7 +27,7 @@ def _RunCLI():
 		# The goal here is to find the context that imported us
 		try:
 			frame = sys.exc_info()[2].tb_frame
-			while frame.f_code.co_filename[0] != '<':
+			while frame.f_code.co_filename == __file__:
 				frame = frame.f_back
 			while frame.f_code.co_filename[0] == '<':
 				frame = frame.f_back
