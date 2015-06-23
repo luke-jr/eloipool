@@ -62,7 +62,11 @@ class StratumHandler(networkserver.SocketHandler):
 		return self.push(json.dumps(ob).encode('ascii') + b"\n")
 	
 	def found_terminator(self):
-		inbuf = b"".join(self.incoming).decode('ascii')
+		try:
+			inbuf = b"".join(self.incoming).decode('ascii')
+		except:
+			self.boot()
+			return
 		self.incoming = []
 		
 		if not inbuf:
