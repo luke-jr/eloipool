@@ -478,6 +478,10 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.source = TS['name']
 		newMerkleTree.source_uri = TS['uri']
 		
+		if MP['version'] < self.BlockVersion:
+			self.logger.error('Template from \'%s\' has too low block version (%u < %u)' % (TS['name'], MP['version'], self.BlockVersion))
+			return None
+		
 		(AcceptedScore, TotalScore) = self._CheckTemplate(newMerkleTree, TS)
 		
 		AcceptRatio = AcceptedScore / TotalScore
