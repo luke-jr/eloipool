@@ -26,7 +26,6 @@ python-base58		https://gitorious.org/bitcoin/python-base58
 
 Optional Dependencies
 ---------------------
-midstate			http://gitorious.org/midstate/midstate
 Psycopg2			http://initd.org/psycopg/
 PyMySQL				http://www.pymysql.org/
 
