@@ -22,7 +22,7 @@ from bitcoin.varlen import varlenEncode, varlenDecode
 from collections import deque
 from copy import deepcopy
 from queue import Queue
-import jsonrpc
+from bitcoinrpc import authproxy
 import logging
 from math import log
 from merkletree import MerkleTree
@@ -112,7 +112,7 @@ class merkleMaker(threading.Thread):
 		_URI2Access = {}
 		def URI2Access(uri):
 			if uri not in _URI2Access:
-				access = jsonrpc.ServiceProxy(uri)
+				access = authproxy.AuthServiceProxy(uri)
 				access.OldGMP = False
 				_URI2Access[uri] = access
 			return _URI2Access[uri]
