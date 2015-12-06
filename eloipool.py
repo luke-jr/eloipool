@@ -29,7 +29,7 @@ __import__(configmod)
 config = importlib.import_module(configmod)
 
 if not hasattr(config, 'BlockVersion'):
-	config.BlockVersion = 3
+	config.BlockVersion = 4
 config.BlockVersionBytes = struct.pack('<L', config.BlockVersion)
 
 if not hasattr(config, 'ServerName'):
