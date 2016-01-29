@@ -43,6 +43,13 @@ class BitcoinScript:
 		elif ver == 5 or ver == 196:
 			return b'\xa9\x14' + pubkeyhash + b'\x87'
 		raise ValueError('invalid address version')
+	
+	@classmethod
+	def commitment(cls, commitment):
+		clen = len(commitment)
+		if clen > 0x4b:
+			raise NotImplementedError
+		return b'\x6a' + bytes((clen,)) + commitment
 
 def countSigOps(s):
 	# FIXME: don't count data as ops

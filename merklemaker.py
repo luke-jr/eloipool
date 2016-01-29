@@ -176,7 +176,7 @@ class merkleMaker(threading.Thread):
 	
 	def createClearMerkleTree(self, height):
 		subsidy = self.SubsidyAlgo(height)
-		cbtxn = self.makeCoinbaseTxn(subsidy, False)
+		cbtxn = self.makeCoinbaseTxn(subsidy, False, witness_commitment=None)
 		cbtxn.setCoinbase(b'\0\0')  # necessary to avoid triggering segwit marker+flags
 		cbtxn.assemble()
 		mt = MerkleTree([cbtxn])
@@ -406,7 +406,9 @@ class merkleMaker(threading.Thread):
 				ka['txid'] = iinfo['txid']
 			txnobjs.append(Txn(data=txnlist[i], **ka))
 		
-		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
+		witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce)
+		
+		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'], witness_commitment=witness_commitment)
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
 		txnobjs[0] = cbtxn
@@ -416,7 +418,7 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
-		newMerkleTree.witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce)
+		newMerkleTree.witness_commitment = witness_commitment
 		
 		return newMerkleTree
 	
@@ -823,9 +825,9 @@ def _test():
 	txninfo[2]['fee'] = 0
 	assert MBS(1) == (MP, txnlist, txninfo)
 	# _ProcessGBT tests
-	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
+	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None, witness_commitment=None):
 		txn = Txn.new()
-		txn.addOutput(coinbaseValue, b'')
+		txn.addOutput(coinbaseValue, BitcoinScript.commitment(witness_commitment) if witness_commitment else b'')
 		return txn
 	MM.makeCoinbaseTxn = makeCoinbaseTxn
 	MM.updateBlock = lambda *a, **ka: None
