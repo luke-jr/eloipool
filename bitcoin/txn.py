@@ -28,7 +28,10 @@ class Txn:
 			if txid:
 				self.txid = txid
 			else:
-				self.idhash()
+				try:
+					self.idhash()
+				except NotImplementedError:
+					pass
 	
 	@classmethod
 	def new(cls):
@@ -52,6 +55,9 @@ class Txn:
 		self.outputs.append( (amount, pkScript) )
 	
 	def disassemble(self, retExtra = False):
+		if self.data[4:6] == b'\0\1':
+			raise NotImplementedError
+		
 		self.version = unpack('<L', self.data[:4])[0]
 		rc = [4]
 		
@@ -118,6 +124,10 @@ class Txn:
 		self.idhash()
 	
 	def idhash(self):
+		if self.data[4:6] == b'\0\1':
+			if hasattr(self, 'txid'):
+				del self.txid
+			raise NotImplementedError
 		self.txid = dblsha(self.data)
 
 # Txn tests

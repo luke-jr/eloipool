@@ -164,6 +164,7 @@ class merkleMaker(threading.Thread):
 	def createClearMerkleTree(self, height):
 		subsidy = self.SubsidyAlgo(height)
 		cbtxn = self.makeCoinbaseTxn(subsidy, False)
+		cbtxn.setCoinbase(b'\0\0')  # necessary to avoid triggering segwit marker+flags
 		cbtxn.assemble()
 		return MerkleTree([cbtxn])
 	
