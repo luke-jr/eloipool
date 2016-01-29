@@ -389,10 +389,15 @@ class merkleMaker(threading.Thread):
 		txninfo.insert(0, {
 		})
 		
-		txnlist = [a for a in map(Txn, txnlist[1:])]
-		txnlist.insert(0, cbtxn)
-		txnlist = list(txnlist)
-		newMerkleTree = MerkleTree(txnlist)
+		txnobjs = [cbtxn]
+		for i in range(1, len(txnlist)):
+			iinfo = txninfo[i]
+			ka = {}
+			if 'txid' in iinfo:
+				ka['txid'] = iinfo['txid']
+			txnobjs.append(Txn(data=txnlist[i], **ka))
+		txnobjs = list(txnobjs)
+		newMerkleTree = MerkleTree(txnobjs)
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP

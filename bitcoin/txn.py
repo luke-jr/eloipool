@@ -22,10 +22,13 @@ from struct import pack, unpack
 _nullprev = b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0'
 
 class Txn:
-	def __init__(self, data=None):
+	def __init__(self, data=None, txid=None):
 		if data:
 			self.data = data
-			self.idhash()
+			if txid:
+				self.txid = txid
+			else:
+				self.idhash()
 	
 	@classmethod
 	def new(cls):
