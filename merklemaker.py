@@ -398,20 +398,19 @@ class merkleMaker(threading.Thread):
 		
 		self._makeBlockSafe(MP, txnlist, txninfo)
 		
-		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
-		cbtxn.setCoinbase(b'\0\0')
-		cbtxn.assemble()
-		txnlist.insert(0, cbtxn.data)
-		txninfo.insert(0, {
-		})
-		
-		txnobjs = [cbtxn]
-		for i in range(1, len(txnlist)):
+		txnobjs = [None]
+		for i in range(len(txnlist)):
 			iinfo = txninfo[i]
 			ka = {}
 			if 'txid' in iinfo:
 				ka['txid'] = iinfo['txid']
 			txnobjs.append(Txn(data=txnlist[i], **ka))
+		
+		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
+		cbtxn.setCoinbase(b'\0\0')
+		cbtxn.assemble()
+		txnobjs[0] = cbtxn
+		
 		txnobjs = list(txnobjs)
 		newMerkleTree = MerkleTree(txnobjs)
 		newMerkleTree.POTInfo = MP.get('POTInfo')
