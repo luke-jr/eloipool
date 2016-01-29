@@ -272,15 +272,17 @@ class merkleMaker(threading.Thread):
 		return True
 	
 	def _makeBlockSafe(self, MP, txnlist, txninfo):
+		sizelimit = MP.get('sizelimit', 1000000) - 0x10000  # 64 KB breathing room
 		blocksize = sum(map(len, txnlist)) + 80
-		while blocksize > 934464:  # 1 "MB" limit - 64 KB breathing room
+		while blocksize > sizelimit:
 			txnsize = len(txnlist[-1])
 			self._trimBlock(MP, txnlist, txninfo, 'SizeLimit', lambda x: 'Making blocks over 1 MB size limit (%d bytes; %s)' % (blocksize, x))
 			blocksize -= txnsize
 		
 		# NOTE: This check doesn't work at all without BIP22 transaction obj format
+		sigoplimit = MP.get('sigoplimit', 20000) - 0x200  # 512 sigop breathing room
 		blocksigops = sum(a.get('sigops', 0) for a in txninfo)
-		while blocksigops > 19488:  # 20k limit - 0x200 breathing room
+		while blocksigops > sigoplimit:
 			txnsigops = txninfo[-1]['sigops']
 			self._trimBlock(MP, txnlist, txninfo, 'SigOpLimit', lambda x: 'Making blocks over 20k SigOp limit (%d; %s)' % (blocksigops, x))
 			blocksigops -= txnsigops
