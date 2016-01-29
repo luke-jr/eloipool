@@ -129,6 +129,16 @@ class Txn:
 				del self.txid
 			raise NotImplementedError
 		self.txid = dblsha(self.data)
+		if hasattr(self, 'witness_hash'):
+			del self.witness_hash
+	
+	def withash(self):
+		self.witness_hash = dblsha(self.data)
+	
+	def get_witness_hash(self):
+		if not hasattr(self, 'witness_hash'):
+			self.withash()
+		return self.witness_hash
 
 # Txn tests
 def _test():

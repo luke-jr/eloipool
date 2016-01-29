@@ -35,6 +35,18 @@ import traceback
 _makeCoinbase = [0, 0]
 _filecounter = 0
 
+def CalculateWitnessCommitment(txnobjs, nonce):
+	gentx_withash = b'\0' * 0x20
+	withashes = (gentx_withash,) + tuple(a.get_witness_hash() for a in txnobjs[1:])
+	txids = (gentx_withash,) + tuple(a.txid for a in txnobjs[1:])
+	if withashes == txids:
+		# Unnecessary
+		return None
+	
+	wmr = MerkleTree(data=withashes).merkleRoot()
+	commitment = dblsha(wmr + nonce)
+	return commitment
+
 def MakeBlockHeader(MRD, BlockVersionBytes):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
 	timestamp = pack('<L', int(time()))
@@ -82,6 +94,7 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (None, None, None)
 		self.lastBlock = (None, None, None)
 		self.SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
+		self.WitnessNonce = b'\0' * 0x20
 	
 	def _prepare(self):
 		self.UseTemplateChecks = True
@@ -166,7 +179,9 @@ class merkleMaker(threading.Thread):
 		cbtxn = self.makeCoinbaseTxn(subsidy, False)
 		cbtxn.setCoinbase(b'\0\0')  # necessary to avoid triggering segwit marker+flags
 		cbtxn.assemble()
-		return MerkleTree([cbtxn])
+		mt = MerkleTree([cbtxn])
+		mt.witness_commitment = None
+		return mt
 	
 	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
@@ -402,6 +417,7 @@ class merkleMaker(threading.Thread):
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
+		newMerkleTree.witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce)
 		
 		return newMerkleTree
 	
