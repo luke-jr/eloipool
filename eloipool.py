@@ -451,7 +451,7 @@ def checkData(share):
 	if data[72:76] != bits:
 		raise RejectedShare('bad-diffbits')
 	
-	if data[0] != config.BlockVersionBytes:
+	if data[0:4] != config.BlockVersionBytes:
 		raise RejectedShare('bad-version')
 
 def buildStratumData(share, merkleroot):
