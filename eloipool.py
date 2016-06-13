@@ -477,6 +477,14 @@ def IsJobValid(wli, wluser = None):
 		return False
 	return True
 
+def LookupWork(username, wli):
+	if username not in workLog:
+		raise RejectedShare('unknown-user')
+	MWL = workLog[username]
+	if wli not in MWL:
+		raise RejectedShare('unknown-work')
+	return MWL[wli]
+
 def checkShare(share):
 	shareTime = share['time'] = time()
 	
@@ -486,10 +494,6 @@ def checkShare(share):
 		# getwork/GBT
 		checkData(share)
 		data = share['data']
-		
-		if username not in workLog:
-			raise RejectedShare('unknown-user')
-		MWL = workLog[username]
 		
 		shareMerkleRoot = data[36:68]
 		if 'blkdata' in share:
@@ -508,22 +512,18 @@ def checkShare(share):
 			mode = 'MRD'
 			moden = 0
 			coinbase = None
+		
+		(wld, issueT) = LookupWork(username, wli)
 	else:
 		# Stratum
 		checkQuickDiffAdjustment = config.DynamicTargetQuick
 		wli = share['jobid']
+		(wld, issueT) = LookupWork(None, wli)
 		buildStratumData(share, b'\0' * 32)
 		mode = 'MC'
 		moden = 1
 		othertxndata = b''
-		if None not in workLog:
-			# We haven't yet sent any stratum work for this block
-			raise RejectedShare('unknown-work')
-		MWL = workLog[None]
 	
-	if wli not in MWL:
-		raise RejectedShare('unknown-work')
-	(wld, issueT) = MWL[wli]
 	share[mode] = wld
 	
 	share['issuetime'] = issueT
