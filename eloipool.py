@@ -51,6 +51,7 @@ if len(rootlogger.handlers) == 0:
 		level=logging.DEBUG,
 	)
 	for infoOnly in (
+		'BitcoinRPC',
 		'checkShare',
 		'getTarget',
 		'JSONRPCHandler',
