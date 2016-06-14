@@ -19,6 +19,7 @@
 import argparse
 import importlib
 import struct
+import util
 argparser = argparse.ArgumentParser()
 argparser.add_argument('-c', '--config', help='Config name to load from config_<ARG>.py')
 args = argparser.parse_args()
@@ -37,6 +38,11 @@ if not hasattr(config, 'ServerName'):
 
 if not hasattr(config, 'ShareTarget'):
 	config.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
+if not hasattr(config, 'WorkUpdateInterval'):
+	config.WorkUpdateInterval = 55
+config.StaleWorkTimeout = max(120, config.WorkUpdateInterval * 2)
+util.UniqueSessionIdManager._defaultDelay = config.StaleWorkTimeout
 
 
 import logging
@@ -172,7 +178,7 @@ def _WorkLogPruner_I(wl):
 	for username in wl:
 		userwork = wl[username]
 		for wli in tuple(userwork.keys()):
-			if now > userwork[wli][1] + 120:
+			if now > userwork[wli][1] + config.StaleWorkTimeout:
 				del userwork[wli]
 				pruned += 1
 	WorkLogPruner.logger.debug('Pruned %d jobs' % (pruned,))
@@ -473,7 +479,7 @@ def IsJobValid(wli, wluser = None):
 	if wli not in workLog[wluser]:
 		return False
 	(wld, issueT) = workLog[wluser][wli]
-	if time() < issueT - 120:
+	if time() < issueT - config.StaleWorkTimeout:
 		return False
 	return True
 
@@ -616,7 +622,7 @@ def checkShare(share):
 	share['_targethex'] = '%064x' % (workTarget,)
 	
 	shareTimestamp = unpack('<L', data[68:72])[0]
-	if shareTime < issueT - 120:
+	if shareTime < issueT - config.StaleWorkTimeout:
 		raise RejectedShare('stale-work')
 	if shareTimestamp < shareTime - 300:
 		raise RejectedShare('time-too-old')
@@ -830,7 +836,7 @@ def restoreState(SAVE_STATE_FILENAME):
 					# Current format, from 2012-02-03 onward
 					DupeShareHACK = pickle.load(f)
 				
-				if t + 120 >= time():
+				if t + config.StaleWorkTimeout >= time():
 					workLog = pickle.load(f)
 				else:
 					logger.debug('Skipping restore of expired workLog')
@@ -941,6 +947,7 @@ if __name__ == "__main__":
 	server.RaiseRedFlags = RaiseRedFlags
 	server.BlockVersion = config.BlockVersion
 	server.ShareTarget = config.ShareTarget
+	server.StaleWorkTimeout = config.StaleWorkTimeout
 	server.checkAuthentication = checkAuthentication
 	
 	if hasattr(config, 'TrustedForwarders'):
@@ -957,6 +964,7 @@ if __name__ == "__main__":
 	stratumsrv.defaultTarget = config.ShareTarget
 	stratumsrv.IsJobValid = IsJobValid
 	stratumsrv.checkAuthentication = checkAuthentication
+	stratumsrv.WorkUpdateInterval = config.WorkUpdateInterval
 	if not hasattr(config, 'StratumAddresses'):
 		config.StratumAddresses = ()
 	for a in config.StratumAddresses:

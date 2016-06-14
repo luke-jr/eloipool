@@ -36,7 +36,6 @@ class _getblocktemplate:
 		],
 		'noncerange': '00000000ffffffff',
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-		'expires': 120,
 		'version': 3,
 		'submitold': True,
 		
@@ -78,7 +77,8 @@ class _getblocktemplate:
 		# FIXME: ensure mintime is always >= real mintime, both here and in share acceptance
 		rv['mintime'] = now - 180
 		rv['curtime'] = now
-		rv['maxtime'] = now + 120
+		rv['maxtime'] = now + self.server.StaleWorkTimeout
+		rv['expires'] = self.server.StaleWorkTimeout
 		rv['bits'] = b2a_hex(bits[::-1]).decode('ascii')
 		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])

@@ -47,6 +47,9 @@ WorkQueueSizeClear = (0x1000, 0x2000)
 # (used for longpolls)
 WorkQueueSizeLongpoll = (0x1000, 0x2000)
 
+# How often to send new jobs to miners
+WorkUpdateInterval = 55
+
 # How long to wait between bitcoind GBT updates normally
 MinimumTxnUpdateWait = 5
 
