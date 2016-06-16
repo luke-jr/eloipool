@@ -451,11 +451,10 @@ def checkData(share, wld):
 	if data[0:4] != MT.MP['_BlockVersionBytes']:
 		raise RejectedShare('bad-version')
 
-def buildStratumData(share, merkleroot, wld):
+def buildStratumData(share, merkleroot, versionbytes):
 	(prevBlock, height, bits) = MM.currentBlock
 	
-	MT = wld[1]
-	data = MT.MP['_BlockVersionBytes']
+	data = versionbytes
 	data += prevBlock
 	data += merkleroot
 	data += share['ntime'][::-1]
@@ -532,7 +531,7 @@ def checkShare(share):
 		coinbase = workCoinbase + share['extranonce1'] + share['extranonce2']
 		cbtxn.setCoinbase(coinbase)
 		cbtxn.assemble()
-		data = buildStratumData(share, workMerkleTree.withFirst(cbtxn), wld)
+		data = buildStratumData(share, workMerkleTree.withFirst(cbtxn), workMerkleTree.MP['_BlockVersionBytes'])
 		shareMerkleRoot = data[36:68]
 	
 	if data in DupeShareHACK:
@@ -683,6 +682,9 @@ def receiveShare(share):
 		share['rejectReason'] = 'ERROR'
 		raise
 	finally:
+		if 'data' not in share:
+			# In case of rejection, data might not have been defined yet, but logging may need it
+			buildStratumData(share, b'\0' * 32, b'\xff\xff\xff\xff')
 		if not share.get('upstreamRejectReason', None) is PendingUpstream:
 			logShare(share)
 
