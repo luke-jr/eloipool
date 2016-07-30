@@ -66,7 +66,7 @@ class _getwork:
 		ShareTargetHexLE = b2a_hex(bytes.fromhex(ShareTargetHex)[::-1]).decode('ascii')
 		rv['target'] = ShareTargetHexLE
 		
-		self._JSONHeaders['X-Roll-NTime'] = 'expire=120'
+		self._JSONHeaders['X-Roll-NTime'] = 'expire=%d' % (self.server.StaleWorkTimeout,)
 		
 		return rv
 	

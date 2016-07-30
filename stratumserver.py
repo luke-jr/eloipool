@@ -265,6 +265,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self._JobId = 0
 		self.JobId = '%d' % (time(),)
 		self.WakeRequest = None
+		self.WorkUpdateInterval = 55
 		self.UpdateTask = None
 		self._PendingQuickUpdates = set()
 	
@@ -325,7 +326,7 @@ class StratumServer(networkserver.AsyncSocketServer):
 		self.WakeRequest = 1
 		self.wakeup()
 		
-		self.UpdateTask = self.schedule(self.updateJob, time() + 55)
+		self.UpdateTask = self.schedule(self.updateJob, time() + self.WorkUpdateInterval)
 	
 	def doQuickUpdate(self):
 		PQU = self._PendingQuickUpdates

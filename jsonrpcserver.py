@@ -295,6 +295,7 @@ class JSONRPCServer(networkserver.AsyncSocketServer):
 		
 		self.SecretUser = None
 		self.ShareTarget = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+		self.StaleWorkTimeout = 120
 		
 		self._LPId = 0
 		self.LPId = '%d' % (time(),)
