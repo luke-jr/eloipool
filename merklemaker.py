@@ -27,6 +27,7 @@ import logging
 from math import log
 from merkletree import MerkleTree
 import socket
+import struct
 from struct import pack
 import threading
 from time import sleep, time
@@ -35,8 +36,18 @@ import traceback
 _makeCoinbase = [0, 0]
 _filecounter = 0
 
-def MakeBlockHeader(MRD, BlockVersionBytes):
+SupportedRules = ('csv',)
+
+def SplitRuleFlag(ruleflag):
+	MandatoryRule = (ruleflag[0] == '!')
+	if MandatoryRule:
+		return (True, ruleflag[1:])
+	else:
+		return (False, ruleflag)
+
+def MakeBlockHeader(MRD):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
+	BlockVersionBytes = merkleTree.MP['_BlockVersionBytes']
 	timestamp = pack('<L', int(time()))
 	hdr = BlockVersionBytes + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
@@ -60,6 +71,7 @@ class merkleMaker(threading.Thread):
 	]
 	GBTReq = {
 		'capabilities': GBTCaps,
+		'rules': SupportedRules,
 	}
 	GMPReq = {
 		'capabilities': GBTCaps,
@@ -161,11 +173,20 @@ class merkleMaker(threading.Thread):
 		self.lastMerkleUpdate = 0
 		self.nextMerkleUpdate = 0
 	
+	def UpdateClearMerkleTree(self, MT, MP):
+		nMP = {}
+		for copy_mp in ('version', '_BlockVersionBytes', 'rules', '_filtered_vbavailable'):
+			nMP[copy_mp] = MP[copy_mp]
+		MT.MP = nMP
+	
 	def createClearMerkleTree(self, height):
 		subsidy = self.SubsidyAlgo(height)
 		cbtxn = self.makeCoinbaseTxn(subsidy, False)
 		cbtxn.assemble()
-		return MerkleTree([cbtxn])
+		MT = MerkleTree([cbtxn])
+		if self.currentMerkleTree:
+			self.UpdateClearMerkleTree(MT, self.currentMerkleTree.MP)
+		return MT
 	
 	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
 		if newBlock == self.currentBlock[0]:
@@ -237,7 +258,9 @@ class merkleMaker(threading.Thread):
 				self.readyCV.notify_all()
 		
 		self.needMerkle = 2
-		self.onBlockChange()
+		# If we don't have MP yet, we need to wait until we do...
+		if hasattr(self.currentBlock, 'MP'):
+			self.onBlockChange()
 	
 	def _trimBlock(self, MP, txnlist, txninfo, floodn, msgf):
 		fee = txninfo[-1].get('fee', None)
@@ -356,12 +379,35 @@ class merkleMaker(threading.Thread):
 		oMP = MP
 		MP = deepcopy(MP)
 		
+		if MP['version'] & 0xe0000000 != 0x20000000:
+			self.logger.error('Template from \'%s\' has non-BIP9 block version (%x)' % (TS['name'], MP['version']))
+			return None
+		
+		ISupportAllRules = True
+		for ruleflag in MP['rules']:
+			(MandatoryRule, rule) = SplitRuleFlag(ruleflag)
+			if rule not in SupportedRules:
+				ISupportAllRules = False
+				if MandatoryRule:
+					self.logger.error('Template from \'%s\' strictly requires unsupported rule \'%s\'', TS['name'], rule)
+					return None
+				else:
+					self.logger.warning('Template from \'%s\' loosely requires unsupported rule \'%s\'', TS['name'], rule)
+		
+		MP['_filtered_vbavailable'] = {}
+		for ruleflag in MP['vbavailable']:
+			rulebit = MP['vbavailable'][ruleflag]
+			rulemask = (1 << rulebit)
+			if MP['version'] & rulemask:
+				MP['_filtered_vbavailable'][ruleflag] = rulebit
+		
 		prevBlock = bytes.fromhex(MP['previousblockhash'])[::-1]
 		if 'height' not in MP:
 			MP['height'] = TS['access'].getinfo()['blocks'] + 1
 		height = MP['height']
 		bits = bytes.fromhex(MP['bits'])[::-1]
 		(MP['_bits'], MP['_prevBlock']) = (bits, prevBlock)
+		MP['_BlockVersionBytes'] = struct.pack('<L', MP['version'])
 		if (prevBlock, height, bits) != self.currentBlock and (self.currentBlock[1] is None or height > self.currentBlock[1]):
 			self.updateBlock(prevBlock, height, bits, _HBH=(MP['previousblockhash'], MP['bits']))
 		
@@ -379,6 +425,9 @@ class merkleMaker(threading.Thread):
 		txnlist = [a for a in map(bytes.fromhex, txnlist)]
 		
 		self._makeBlockSafe(MP, txnlist, txninfo)
+		if len(MP['transactions']) != len(txnlist) and not ISupportAllRules:
+			self.logger.error('Template from \'%s\' should be trimmed, but requires unsupported rule(s)', TS['name'])
+			return None
 		
 		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
 		cbtxn.setCoinbase(b'\0\0')
@@ -423,7 +472,7 @@ class merkleMaker(threading.Thread):
 		cbtxn.assemble()
 		merkleRoot = newMerkleTree.merkleRoot()
 		MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
-		blkhdr = MakeBlockHeader(MRD, self.BlockVersionBytes)
+		blkhdr = MakeBlockHeader(MRD)
 		data = assembleBlock(blkhdr, txnlist)
 		ProposeReq = {
 			"mode": "proposal",
@@ -483,14 +532,12 @@ class merkleMaker(threading.Thread):
 	def _updateMerkleTree_fromTS(self, TS):
 		MP = self._CallGBT(TS)
 		newMerkleTree = self._ProcessGBT(MP, TS)
+		if newMerkleTree is None:
+			return None
 		
 		# Some versions of bitcoinrpc ServiceProxy have problems copying/pickling, so just store name and URI for now
 		newMerkleTree.source = TS['name']
 		newMerkleTree.source_uri = TS['uri']
-		
-		if MP['version'] < self.BlockVersion:
-			self.logger.error('Template from \'%s\' has too low block version (%u < %u)' % (TS['name'], MP['version'], self.BlockVersion))
-			return None
 		
 		(AcceptedScore, TotalScore) = self._CheckTemplate(newMerkleTree, TS)
 		if TotalScore is None:
@@ -551,6 +598,12 @@ class merkleMaker(threading.Thread):
 		if blkbasics != self.currentBlock:
 			self.updateBlock(*blkbasics, _HBH=(MP['previousblockhash'], MP['bits']))
 		self.currentMerkleTree = BestMT
+		FirstTemplate = not hasattr(self.curClearMerkleTree, 'MP')
+		self.UpdateClearMerkleTree(self.curClearMerkleTree, MP)
+		self.UpdateClearMerkleTree(self.nextMerkleTree, MP)
+		if FirstTemplate:
+			# This was skipped until we had MP info, so do it now
+			self.onBlockChange()
 	
 	def _updateMerkleTree(self):
 		global now
@@ -749,6 +802,9 @@ def _test():
 		def critical(self, *a):
 			if self.LO > 1: return
 			reallogger.critical(*a)
+		def error(self, *a):
+			if self.LO > 0.5: return
+			reallogger.error(*a)
 		def warning(self, *a):
 			if self.LO: return
 			reallogger.warning(*a)
@@ -816,7 +872,9 @@ def _test():
 		'height': 219507,
 		'coinbasevalue': 3,
 		'previousblockhash': '000000000000012806bc100006dc83220bd9c2ac2709dc14a0d0fa1d6f9b733c',
-		'version': 1,
+		'version': 0x20000000,
+		'rules': (),
+		'vbavailable': {},
 		'bits': '1a05a6b1'
 	}
 	nMT = MM._ProcessGBT(gbt)
