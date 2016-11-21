@@ -36,7 +36,7 @@ import traceback
 _makeCoinbase = [0, 0]
 _filecounter = 0
 
-SupportedRules = ('csv',)
+SupportedRules = ('csv', 'segwit')
 
 def SplitRuleFlag(ruleflag):
 	MandatoryRule = (ruleflag[0] == '!')
