@@ -46,13 +46,15 @@ def SplitRuleFlag(ruleflag):
 	else:
 		return (False, ruleflag)
 
-def CalculateWitnessCommitment(txnobjs, nonce):
+def CalculateWitnessCommitment(txnobjs, nonce, force=False):
 	gentx_withash = b'\0' * 0x20
 	withashes = (gentx_withash,) + tuple(a.get_witness_hash() for a in txnobjs[1:])
-	txids = (gentx_withash,) + tuple(a.txid for a in txnobjs[1:])
-	if withashes == txids:
-		# Unnecessary
-		return None
+	
+	if not force:
+		txids = (gentx_withash,) + tuple(a.txid for a in txnobjs[1:])
+		if withashes == txids:
+			# Unnecessary
+			return None
 	
 	wmr = MerkleTree(data=withashes).merkleRoot()
 	commitment = util.dblsha(wmr + nonce)
@@ -113,6 +115,7 @@ class merkleMaker(threading.Thread):
 		self.lastBlock = (None, None, None)
 		self.SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
 		self.WitnessNonce = b'\0' * 0x20
+		self.ForceWitnessCommitment = False
 	
 	def _prepare(self):
 		self.UseTemplateChecks = True
@@ -460,7 +463,7 @@ class merkleMaker(threading.Thread):
 				ka['txid'] = bytes.fromhex(iinfo['txid'])[::-1]
 			txnobjs.append(Txn(data=txnlist[i], **ka))
 		
-		witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce)
+		witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce, force=self.ForceWitnessCommitment)
 		
 		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'], witness_commitment=witness_commitment)
 		cbtxn.setCoinbase(b'\0\0')
