@@ -17,6 +17,8 @@
 from base58 import b58decode
 from util import dblsha
 
+WitnessMagic = b'\xaa\x21\xa9\xed'
+
 def _Address2PKH(addr):
 	try:
 		addr = b58decode(addr, 25)

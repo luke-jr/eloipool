@@ -95,15 +95,13 @@ except:
 	pass
 
 
-from bitcoin.script import BitcoinScript
+from bitcoin.script import BitcoinScript, WitnessMagic
 from bitcoin.txn import Txn
 from base58 import b58decode
 from binascii import b2a_hex
 from struct import pack
 import subprocess
 from time import time
-
-WitnessMagic = b'\xaa\x21\xa9\xed'
 
 def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None, witness_commitment = NotImplemented):
 	if witness_commitment is NotImplemented:

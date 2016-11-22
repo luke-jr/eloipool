@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from binascii import b2a_hex
+from bitcoin.script import BitcoinScript, WitnessMagic
 from copy import deepcopy
 from jsonrpcserver import JSONRPCHandler
 from time import time
@@ -85,6 +86,9 @@ class _getblocktemplate:
 		rv['target'] = '%064x' % (target,)
 		t = deepcopy(merkleTree.data[0])
 		t.setCoinbase(cb)
+		if not merkleTree.witness_commitment is None:
+			assert t.outputs[-1] == (0, BitcoinScript.commitment(WitnessMagic + merkleTree.witness_commitment))
+			t.outputs.pop()
 		t.assemble()
 		txno = {}
 		txno['data'] = b2a_hex(t.data).decode('ascii')
