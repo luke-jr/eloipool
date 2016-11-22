@@ -16,7 +16,7 @@
 
 from binascii import b2a_hex
 import bitcoin.script
-from bitcoin.script import countSigOps
+from bitcoin.script import BitcoinScript, countSigOps
 from bitcoin.txn import Txn
 from bitcoin.varlen import varlenEncode, varlenDecode
 from collections import deque
@@ -32,6 +32,7 @@ from struct import pack
 import threading
 from time import sleep, time
 import traceback
+import util
 
 _makeCoinbase = [0, 0]
 _filecounter = 0
@@ -54,7 +55,7 @@ def CalculateWitnessCommitment(txnobjs, nonce):
 		return None
 	
 	wmr = MerkleTree(data=withashes).merkleRoot()
-	commitment = dblsha(wmr + nonce)
+	commitment = util.dblsha(wmr + nonce)
 	return commitment
 
 def MakeBlockHeader(MRD):
@@ -64,10 +65,15 @@ def MakeBlockHeader(MRD):
 	hdr = BlockVersionBytes + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
-def assembleBlock(blkhdr, txlist):
+def assembleBlock(blkhdr, txlist, wantGenTxNonce=False):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
-	for tx in txlist:
+	gentxdata = txlist[0].data
+	assert gentxdata[4:6] != b'\0\1'
+	if wantGenTxNonce:
+		gentxdata = gentxdata[:4] + b'\0\1' + gentxdata[4:-4] + b'\x01\x20' + (b'\0' * 0x20) + gentxdata[-4:]
+	payload += gentxdata
+	for tx in txlist[1:]:
 		payload += tx.data
 	return payload
 
@@ -451,7 +457,7 @@ class merkleMaker(threading.Thread):
 			iinfo = txninfo[i]
 			ka = {}
 			if 'txid' in iinfo:
-				ka['txid'] = iinfo['txid']
+				ka['txid'] = bytes.fromhex(iinfo['txid'])[::-1]
 			txnobjs.append(Txn(data=txnlist[i], **ka))
 		
 		witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce)
@@ -494,10 +500,13 @@ class merkleMaker(threading.Thread):
 		coinbase = self.makeCoinbase(height=height)
 		cbtxn.setCoinbase(coinbase)
 		cbtxn.assemble()
+		newMerkleTree.recalculate(True)
 		merkleRoot = newMerkleTree.merkleRoot()
 		MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
 		blkhdr = MakeBlockHeader(MRD)
-		data = assembleBlock(blkhdr, txnlist)
+		need_gentx_nonce = (not newMerkleTree.witness_commitment is None)
+		# 0.13 doesn't allow segwit-enabled block proposals without the generation transaction in witness form with its nonce
+		data = assembleBlock(blkhdr, txnlist, wantGenTxNonce=need_gentx_nonce)
 		ProposeReq = {
 			"mode": "proposal",
 			"data": b2a_hex(data).decode('utf8'),

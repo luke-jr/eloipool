@@ -103,6 +103,8 @@ from struct import pack
 import subprocess
 from time import time
 
+WitnessMagic = b'\xaa\x21\xa9\xed'
+
 def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None, witness_commitment = NotImplemented):
 	if witness_commitment is NotImplemented:
 		raise NotImplementedError
