@@ -37,10 +37,6 @@ class _getblocktemplate:
 		'target': '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 		'version': 3,
 		'submitold': True,
-		
-		# Bitcoin-specific:
-		'sigoplimit': 20000,
-		'sizelimit': 1000000,
 	}
 	def doJSON_getblocktemplate(self, params):
 		if 'mode' in params and params['mode'] != 'template':
@@ -66,9 +62,16 @@ class _getblocktemplate:
 		else:
 			rv['longpollid'] = str(self.server.LPId)
 		tl = []
+		SegwitTemplate = False
+		for rule in merkleTree.MP['rules']:
+			if rule == 'segwit' or rule == '!segwit':
+				SegwitTemplate = True
+				break
 		for txn in merkleTree.data[1:]:
 			txno = {}
 			txno['data'] = b2a_hex(txn.data).decode('ascii')
+			if SegwitTemplate:
+				txno['txid'] = b2a_hex(txn.txid[::-1]).decode('ascii')
 			tl.append(txno)
 		rv['transactions'] = tl
 		now = int(time())
