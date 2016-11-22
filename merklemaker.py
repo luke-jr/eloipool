@@ -47,7 +47,7 @@ def SplitRuleFlag(ruleflag):
 		return (False, ruleflag)
 
 def CalculateWitnessCommitment(txnobjs, nonce, force=False):
-	gentx_withash = b'\0' * 0x20
+	gentx_withash = nonce
 	withashes = (gentx_withash,) + tuple(a.get_witness_hash() for a in txnobjs[1:])
 	
 	if not force:
@@ -67,13 +67,13 @@ def MakeBlockHeader(MRD):
 	hdr = BlockVersionBytes + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
-def assembleBlock(blkhdr, txlist, wantGenTxNonce=False):
+def assembleBlock(blkhdr, txlist, wantGenTxNonce=None):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
 	gentxdata = txlist[0].data
 	assert gentxdata[4:6] != b'\0\1'
 	if wantGenTxNonce:
-		gentxdata = gentxdata[:4] + b'\0\1' + gentxdata[4:-4] + b'\x01\x20' + (b'\0' * 0x20) + gentxdata[-4:]
+		gentxdata = gentxdata[:4] + b'\0\1' + gentxdata[4:-4] + b'\x01\x20' + wantGenTxNonce + gentxdata[-4:]
 	payload += gentxdata
 	for tx in txlist[1:]:
 		payload += tx.data
@@ -509,7 +509,7 @@ class merkleMaker(threading.Thread):
 		blkhdr = MakeBlockHeader(MRD)
 		need_gentx_nonce = (not newMerkleTree.witness_commitment is None)
 		# 0.13 doesn't allow segwit-enabled block proposals without the generation transaction in witness form with its nonce
-		data = assembleBlock(blkhdr, txnlist, wantGenTxNonce=need_gentx_nonce)
+		data = assembleBlock(blkhdr, txnlist, wantGenTxNonce=self.WitnessNonce if need_gentx_nonce else None)
 		ProposeReq = {
 			"mode": "proposal",
 			"data": b2a_hex(data).decode('utf8'),
