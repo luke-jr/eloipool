@@ -16,7 +16,7 @@
 
 from binascii import b2a_hex
 import bitcoin.script
-from bitcoin.script import countSigOps
+from bitcoin.script import BitcoinScript, countSigOps
 from bitcoin.txn import Txn
 from bitcoin.varlen import varlenEncode, varlenDecode
 from collections import deque
@@ -32,11 +32,12 @@ from struct import pack
 import threading
 from time import sleep, time
 import traceback
+import util
 
 _makeCoinbase = [0, 0]
 _filecounter = 0
 
-SupportedRules = ('csv',)
+SupportedRules = ('csv', 'segwit')
 
 def SplitRuleFlag(ruleflag):
 	MandatoryRule = (ruleflag[0] == '!')
@@ -45,6 +46,20 @@ def SplitRuleFlag(ruleflag):
 	else:
 		return (False, ruleflag)
 
+def CalculateWitnessCommitment(txnobjs, nonce, force=False):
+	gentx_withash = nonce
+	withashes = (gentx_withash,) + tuple(a.get_witness_hash() for a in txnobjs[1:])
+	
+	if not force:
+		txids = (gentx_withash,) + tuple(a.txid for a in txnobjs[1:])
+		if withashes == txids:
+			# Unnecessary
+			return None
+	
+	wmr = MerkleTree(data=withashes).merkleRoot()
+	commitment = util.dblsha(wmr + nonce)
+	return commitment
+
 def MakeBlockHeader(MRD):
 	(merkleRoot, merkleTree, coinbase, prevBlock, bits) = MRD[:5]
 	BlockVersionBytes = merkleTree.MP['_BlockVersionBytes']
@@ -52,10 +67,15 @@ def MakeBlockHeader(MRD):
 	hdr = BlockVersionBytes + prevBlock + merkleRoot + timestamp + bits + b'iolE'
 	return hdr
 
-def assembleBlock(blkhdr, txlist):
+def assembleBlock(blkhdr, txlist, wantGenTxNonce=None):
 	payload = blkhdr
 	payload += varlenEncode(len(txlist))
-	for tx in txlist:
+	gentxdata = txlist[0].data
+	assert gentxdata[4:6] != b'\0\1'
+	if wantGenTxNonce:
+		gentxdata = gentxdata[:4] + b'\0\1' + gentxdata[4:-4] + b'\x01\x20' + wantGenTxNonce + gentxdata[-4:]
+	payload += gentxdata
+	for tx in txlist[1:]:
 		payload += tx.data
 	return payload
 
@@ -94,6 +114,8 @@ class merkleMaker(threading.Thread):
 		self.currentBlock = (None, None, None)
 		self.lastBlock = (None, None, None)
 		self.SubsidyAlgo = lambda height: 5000000000 >> (height // 210000)
+		self.WitnessNonce = b'\0' * 0x20
+		self.ForceWitnessCommitment = False
 	
 	def _prepare(self):
 		self.UseTemplateChecks = True
@@ -181,11 +203,13 @@ class merkleMaker(threading.Thread):
 	
 	def createClearMerkleTree(self, height):
 		subsidy = self.SubsidyAlgo(height)
-		cbtxn = self.makeCoinbaseTxn(subsidy, False)
+		cbtxn = self.makeCoinbaseTxn(subsidy, False, witness_commitment=None)
+		cbtxn.setCoinbase(b'\0\0')  # necessary to avoid triggering segwit marker+flags
 		cbtxn.assemble()
 		MT = MerkleTree([cbtxn])
 		if self.currentMerkleTree:
 			self.UpdateClearMerkleTree(MT, self.currentMerkleTree.MP)
+		MT.witness_commitment = None
 		return MT
 	
 	def updateBlock(self, newBlock, height = None, bits = None, _HBH = None):
@@ -295,15 +319,17 @@ class merkleMaker(threading.Thread):
 		return True
 	
 	def _makeBlockSafe(self, MP, txnlist, txninfo):
+		sizelimit = MP.get('sizelimit', 1000000) - 0x10000  # 64 KB breathing room
 		blocksize = sum(map(len, txnlist)) + 80
-		while blocksize > 934464:  # 1 "MB" limit - 64 KB breathing room
+		while blocksize > sizelimit:
 			txnsize = len(txnlist[-1])
 			self._trimBlock(MP, txnlist, txninfo, 'SizeLimit', lambda x: 'Making blocks over 1 MB size limit (%d bytes; %s)' % (blocksize, x))
 			blocksize -= txnsize
 		
 		# NOTE: This check doesn't work at all without BIP22 transaction obj format
+		sigoplimit = MP.get('sigoplimit', 20000) - 0x200  # 512 sigop breathing room
 		blocksigops = sum(a.get('sigops', 0) for a in txninfo)
-		while blocksigops > 19488:  # 20k limit - 0x200 breathing room
+		while blocksigops > sigoplimit:
 			txnsigops = txninfo[-1]['sigops']
 			self._trimBlock(MP, txnlist, txninfo, 'SigOpLimit', lambda x: 'Making blocks over 20k SigOp limit (%d; %s)' % (blocksigops, x))
 			blocksigops -= txnsigops
@@ -429,20 +455,27 @@ class merkleMaker(threading.Thread):
 			self.logger.error('Template from \'%s\' should be trimmed, but requires unsupported rule(s)', TS['name'])
 			return None
 		
-		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'])
+		txnobjs = [None]
+		for i in range(len(txnlist)):
+			iinfo = txninfo[i]
+			ka = {}
+			if 'txid' in iinfo:
+				ka['txid'] = bytes.fromhex(iinfo['txid'])[::-1]
+			txnobjs.append(Txn(data=txnlist[i], **ka))
+		
+		witness_commitment = CalculateWitnessCommitment(txnobjs, self.WitnessNonce, force=self.ForceWitnessCommitment)
+		
+		cbtxn = self.makeCoinbaseTxn(MP['coinbasevalue'], prevBlockHex = MP['previousblockhash'], witness_commitment=witness_commitment)
 		cbtxn.setCoinbase(b'\0\0')
 		cbtxn.assemble()
-		txnlist.insert(0, cbtxn.data)
-		txninfo.insert(0, {
-		})
+		txnobjs[0] = cbtxn
 		
-		txnlist = [a for a in map(Txn, txnlist[1:])]
-		txnlist.insert(0, cbtxn)
-		txnlist = list(txnlist)
-		newMerkleTree = MerkleTree(txnlist)
+		txnobjs = list(txnobjs)
+		newMerkleTree = MerkleTree(txnobjs)
 		newMerkleTree.POTInfo = MP.get('POTInfo')
 		newMerkleTree.MP = MP
 		newMerkleTree.oMP = oMP
+		newMerkleTree.witness_commitment = witness_commitment
 		
 		return newMerkleTree
 	
@@ -470,10 +503,13 @@ class merkleMaker(threading.Thread):
 		coinbase = self.makeCoinbase(height=height)
 		cbtxn.setCoinbase(coinbase)
 		cbtxn.assemble()
+		newMerkleTree.recalculate(True)
 		merkleRoot = newMerkleTree.merkleRoot()
 		MRD = (merkleRoot, newMerkleTree, coinbase, prevBlock, bits)
 		blkhdr = MakeBlockHeader(MRD)
-		data = assembleBlock(blkhdr, txnlist)
+		need_gentx_nonce = (not newMerkleTree.witness_commitment is None)
+		# 0.13 doesn't allow segwit-enabled block proposals without the generation transaction in witness form with its nonce
+		data = assembleBlock(blkhdr, txnlist, wantGenTxNonce=self.WitnessNonce if need_gentx_nonce else None)
 		ProposeReq = {
 			"mode": "proposal",
 			"data": b2a_hex(data).decode('utf8'),
@@ -856,9 +892,9 @@ def _test():
 	txninfo[2]['fee'] = 0
 	assert MBS(1) == (MP, txnlist, txninfo)
 	# _ProcessGBT tests
-	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
+	def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None, witness_commitment=None):
 		txn = Txn.new()
-		txn.addOutput(coinbaseValue, b'')
+		txn.addOutput(coinbaseValue, BitcoinScript.commitment(witness_commitment) if witness_commitment else b'')
 		return txn
 	MM.makeCoinbaseTxn = makeCoinbaseTxn
 	MM.updateBlock = lambda *a, **ka: None

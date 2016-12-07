@@ -22,10 +22,16 @@ from struct import pack, unpack
 _nullprev = b'\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0'
 
 class Txn:
-	def __init__(self, data=None):
+	def __init__(self, data=None, txid=None):
 		if data:
 			self.data = data
-			self.idhash()
+			if txid:
+				self.txid = txid
+			else:
+				try:
+					self.idhash()
+				except NotImplementedError:
+					pass
 	
 	@classmethod
 	def new(cls):
@@ -49,6 +55,9 @@ class Txn:
 		self.outputs.append( (amount, pkScript) )
 	
 	def disassemble(self, retExtra = False):
+		if self.data[4:6] == b'\0\1':
+			raise NotImplementedError
+		
 		self.version = unpack('<L', self.data[:4])[0]
 		rc = [4]
 		
@@ -115,7 +124,21 @@ class Txn:
 		self.idhash()
 	
 	def idhash(self):
+		if self.data[4:6] == b'\0\1':
+			if hasattr(self, 'txid'):
+				del self.txid
+			raise NotImplementedError
 		self.txid = dblsha(self.data)
+		if hasattr(self, 'witness_hash'):
+			del self.witness_hash
+	
+	def withash(self):
+		self.witness_hash = dblsha(self.data)
+	
+	def get_witness_hash(self):
+		if not hasattr(self, 'witness_hash'):
+			self.withash()
+		return self.witness_hash
 
 # Txn tests
 def _test():

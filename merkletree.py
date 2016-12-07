@@ -38,9 +38,11 @@ class MerkleTree:
 			PreL = [None]
 			StartL = 2
 		Ll = len(L)
+		if isinstance(L[1] if Ll > 1 else L[0], Txn):
+			L = list(map(lambda a: a.txid if a else a, L))
+		else:
+			L = list(L)
 		if detailed or Ll > 1:
-			if isinstance(L[1] if Ll > 1 else L[0], Txn):
-				L = list(map(lambda a: a.txid if a else a, L))
 			while True:
 				if detailed:
 					detail += L

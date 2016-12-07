@@ -95,7 +95,7 @@ except:
 	pass
 
 
-from bitcoin.script import BitcoinScript
+from bitcoin.script import BitcoinScript, WitnessMagic
 from bitcoin.txn import Txn
 from base58 import b58decode
 from binascii import b2a_hex
@@ -103,7 +103,10 @@ from struct import pack
 import subprocess
 from time import time
 
-def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
+def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None, witness_commitment = NotImplemented):
+	if witness_commitment is NotImplemented:
+		raise NotImplementedError
+	
 	txn = Txn.new()
 	
 	if useCoinbaser and hasattr(config, 'CoinbaserCmd') and config.CoinbaserCmd:
@@ -130,6 +133,10 @@ def makeCoinbaseTxn(coinbaseValue, useCoinbaser = True, prevBlockHex = None):
 	
 	pkScript = BitcoinScript.toAddress(config.TrackerAddr)
 	txn.addOutput(coinbaseValue, pkScript)
+	
+	# SegWit commitment
+	if not witness_commitment is None:
+		txn.addOutput(0, BitcoinScript.commitment(WitnessMagic + witness_commitment))
 	
 	# TODO
 	# TODO: red flag on dupe coinbase
