@@ -86,11 +86,11 @@ bcnode = BitcoinNode(config.UpstreamNetworkId)
 bcnode.userAgent += b'Eloipool:0.1/'
 bcnode.newBlock = lambda blkhash: MM.updateMerkleTree()
 
-import jsonrpc
+import bitcoinrpc 
 
 try:
-	import jsonrpc.authproxy
-	jsonrpc.authproxy.USER_AGENT = 'Eloipool/0.1'
+	import bitcoinrpc.authproxy
+	bitcoinrpc.authproxy.USER_AGENT = 'Eloipool/0.1'
 except:
 	pass
 
@@ -213,12 +213,12 @@ from struct import pack, unpack
 import threading
 from time import time
 from util import PendingUpstream, RejectedShare, bdiff1target, dblsha, LEhash2int, swap32, target2bdiff, target2pdiff
-import jsonrpc
+import bitcoinrpc
 import traceback
 
 gotwork = None
 if hasattr(config, 'GotWorkURI'):
-	gotwork = jsonrpc.ServiceProxy(config.GotWorkURI)
+	gotwork = bitcoinrpc.AuthServiceProxy(config.GotWorkURI)
 
 if not hasattr(config, 'DelayLogForUpstream'):
 	config.DelayLogForUpstream = False
@@ -380,7 +380,7 @@ def blockSubmissionThread(payload, blkhash, share):
 	
 	if hasattr(share['merkletree'], 'source_uri'):
 		servers.insert(0, {
-			'access': jsonrpc.ServiceProxy(share['merkletree'].source_uri),
+			'access': bitcoinrpc.AuthServiceProxy(share['merkletree'].source_uri),
 			'name': share['merkletree'].source,
 		})
 	elif not servers:
